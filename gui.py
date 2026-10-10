@@ -19,33 +19,30 @@ from config import CONFIG
 from theme import (CORES, FONTE_LABEL, FONTE_PEQUENA, FONTE_SUBTITULO,
                    FONTE_TITULO, FONTE_VALOR, FONTE_VALOR_MEDIO)
 
-INTERVALO_ATUALIZACAO_MS = 3000  # 3 segundos
+INTERVALO_ATUALIZACAO_MS = 3000
 
 
 class AppBTC(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        # --- Configuração da janela ---
         self.title("BTC Paper Trader")
         self.geometry("1000x820")
         self.minsize(900, 750)
         self.configure(fg_color=CORES["bg_principal"])
         ctk.set_appearance_mode("dark")
 
-        # --- Grid principal ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=3)   # frame inferior (trades/métricas) cresce mais
-        self.grid_rowconfigure(4, weight=2)   # gráfico cresce um pouco
+        self.grid_rowconfigure(3, weight=3)
+        self.grid_rowconfigure(4, weight=2)
 
-        # --- Título ---
-        titulo = ctk.CTkLabel(
+        # Título
+        ctk.CTkLabel(
             self, text="⚡ BTC PAPER TRADER",
             font=FONTE_TITULO, text_color=CORES["verde_matrix"]
-        )
-        titulo.grid(row=0, column=0, pady=(15, 5), sticky="w", padx=20)
+        ).grid(row=0, column=0, pady=(15, 5), sticky="w", padx=20)
 
-        # --- Cards superiores: Preço + Patrimônio ---
+        # Cards topo: Preço + Patrimônio
         self.frame_topo = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_topo.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
         self.frame_topo.grid_columnconfigure((0, 1), weight=1)
@@ -56,35 +53,30 @@ class AppBTC(ctk.CTk):
         self.card_patrimonio = self._criar_card(self.frame_topo, "PATRIMÔNIO", "R$ —", "—")
         self.card_patrimonio.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
-        # --- Card posição ---
-        self.frame_posicao = ctk.CTkFrame(
-            self, fg_color=CORES["bg_card"], corner_radius=10
-        )
+        # Card posição
+        self.frame_posicao = ctk.CTkFrame(self, fg_color=CORES["bg_card"], corner_radius=10)
         self.frame_posicao.grid(row=2, column=0, sticky="ew", padx=20, pady=10)
         self.frame_posicao.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
-        self.lbl_posicao_titulo = ctk.CTkLabel(
+        ctk.CTkLabel(
             self.frame_posicao, text="POSIÇÃO",
             font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
-        )
-        self.lbl_posicao_titulo.grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(10, 5))
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(10, 5))
 
         self.lbl_brl = self._criar_label_posicao(self.frame_posicao, "BRL", "—", 0, 0)
         self.lbl_btc = self._criar_label_posicao(self.frame_posicao, "BTC", "—", 0, 1)
         self.lbl_preco_medio = self._criar_label_posicao(self.frame_posicao, "PREÇO MÉDIO", "—", 0, 2)
         self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
 
-        # --- Frame inferior: trades + métricas ---
+        # Frame inferior: trades + métricas
         self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_baixo.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
-        self.frame_baixo.grid_columnconfigure(0, weight=3)   # trades mais largo
-        self.frame_baixo.grid_columnconfigure(1, weight=2)   # métricas mais estreito
+        self.frame_baixo.grid_columnconfigure(0, weight=3)
+        self.frame_baixo.grid_columnconfigure(1, weight=2)
         self.frame_baixo.grid_rowconfigure(0, weight=1)
 
-        # --- Card últimos trades ---
-        self.card_trades = ctk.CTkFrame(
-            self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10
-        )
+        # Card trades
+        self.card_trades = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
         self.card_trades.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self.card_trades.grid_columnconfigure(0, weight=1)
         self.card_trades.grid_rowconfigure(1, weight=1)
@@ -103,14 +95,12 @@ class AppBTC(ctk.CTk):
         self.txt_trades.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         self.txt_trades.configure(state="disabled")
 
-        # --- Card métricas ---
-        self.card_metricas = ctk.CTkFrame(
-            self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10
-        )
+        # Card métricas
+        self.card_metricas = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
         self.card_metricas.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         self.card_metricas.grid_columnconfigure(1, weight=1)
-        self.card_metricas.grid_rowconfigure(0, weight=0)   # título fixo
-        self.card_metricas.grid_rowconfigure(7, weight=1)   # sobra vai para o fim
+        self.card_metricas.grid_rowconfigure(0, weight=0)
+        self.card_metricas.grid_rowconfigure(7, weight=1)
 
         ctk.CTkLabel(
             self.card_metricas, text="MÉTRICAS",
@@ -138,10 +128,8 @@ class AppBTC(ctk.CTk):
             lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=6)
             self.metricas_labels[chave] = lbl
 
-        # --- Gráfico ---
-        self.frame_grafico = ctk.CTkFrame(
-            self, fg_color=CORES["bg_card"], corner_radius=10
-        )
+        # Gráfico
+        self.frame_grafico = ctk.CTkFrame(self, fg_color=CORES["bg_card"], corner_radius=10)
         self.frame_grafico.grid(row=4, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_grafico.grid_columnconfigure(0, weight=1)
 
@@ -156,36 +144,30 @@ class AppBTC(ctk.CTk):
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame_grafico)
         self.canvas.get_tk_widget().grid(row=1, column=0, sticky="ew", padx=15, pady=(5, 15))
 
-        # --- Status bar ---
+        # Status bar
         self.lbl_status = ctk.CTkLabel(
             self, text="Aguardando dados...",
             font=FONTE_PEQUENA, text_color=CORES["texto_apagado"]
         )
         self.lbl_status.grid(row=5, column=0, sticky="w", padx=20, pady=(0, 10))
 
-        # --- Inicia loop de atualização ---
         self.atualizar()
 
-    # -----------------------------------------------------------------
     def _criar_card(self, parent, titulo, valor, variacao):
-        """Cria um card com título, valor grande e variação."""
         card = ctk.CTkFrame(parent, fg_color=CORES["bg_card"], corner_radius=10)
         card.grid_columnconfigure(0, weight=1)
 
         ctk.CTkLabel(
-            card, text=titulo, font=FONTE_LABEL,
-            text_color=CORES["verde_pastel"]
+            card, text=titulo, font=FONTE_LABEL, text_color=CORES["verde_pastel"]
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 0))
 
         lbl_valor = ctk.CTkLabel(
-            card, text=valor, font=FONTE_VALOR,
-            text_color=CORES["texto_primario"]
+            card, text=valor, font=FONTE_VALOR, text_color=CORES["texto_primario"]
         )
         lbl_valor.grid(row=1, column=0, sticky="w", padx=15, pady=(0, 0))
 
         lbl_var = ctk.CTkLabel(
-            card, text=variacao, font=FONTE_LABEL,
-            text_color=CORES["texto_secundario"]
+            card, text=variacao, font=FONTE_LABEL, text_color=CORES["texto_secundario"]
         )
         lbl_var.grid(row=2, column=0, sticky="w", padx=15, pady=(0, 10))
 
@@ -194,25 +176,20 @@ class AppBTC(ctk.CTk):
         return card
 
     def _criar_label_posicao(self, parent, titulo, valor, row, col):
-        """Cria um bloco de label + valor para o card de posição."""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.grid(row=row + 1, column=col, sticky="w", padx=15, pady=(0, 15))
 
         ctk.CTkLabel(
-            frame, text=titulo, font=FONTE_PEQUENA,
-            text_color=CORES["texto_secundario"]
+            frame, text=titulo, font=FONTE_PEQUENA, text_color=CORES["texto_secundario"]
         ).pack(anchor="w")
 
         lbl = ctk.CTkLabel(
-            frame, text=valor, font=FONTE_VALOR_MEDIO,
-            text_color=CORES["texto_primario"]
+            frame, text=valor, font=FONTE_VALOR_MEDIO, text_color=CORES["texto_primario"]
         )
         lbl.pack(anchor="w")
         return lbl
 
-    # -----------------------------------------------------------------
     def carregar_estado(self):
-        """Lê state.json e history.json. Retorna (estado, historico)."""
         estado = None
         historico = []
 
@@ -233,7 +210,6 @@ class AppBTC(ctk.CTk):
         return estado, historico
 
     def buscar_preco_cache(self):
-        """Lê o preço atual do cache da CoinGecko."""
         cache_path = os.path.join(CONFIG["cache_dir"], "last_price.json")
         if os.path.exists(cache_path):
             try:
@@ -243,9 +219,7 @@ class AppBTC(ctk.CTk):
                 return None
         return None
 
-    # -----------------------------------------------------------------
     def atualizar(self):
-        """Ciclo de atualização: lê arquivos e redesenha a GUI."""
         estado, historico = self.carregar_estado()
         preco = self.buscar_preco_cache()
 
@@ -266,7 +240,6 @@ class AppBTC(ctk.CTk):
         self.after(INTERVALO_ATUALIZACAO_MS, self.atualizar)
 
     def _atualizar_tela(self, estado, historico, preco):
-        """Atualiza todos os widgets com os dados atuais."""
         capital_brl = estado.get("capital_brl", 0)
         capital_btc = estado.get("capital_btc", 0)
         preco_medio = estado.get("preco_medio_brl", 0)
@@ -277,7 +250,6 @@ class AppBTC(ctk.CTk):
         lucro = patrimonio - inicial
         lucro_pct = (lucro / inicial * 100) if inicial else 0
 
-        # --- Card Preço ---
         self.card_preco.lbl_valor.configure(
             text=f"R$ {preco:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
@@ -285,7 +257,6 @@ class AppBTC(ctk.CTk):
             text="preço atual CoinGecko", text_color=CORES["texto_secundario"]
         )
 
-        # --- Card Patrimônio ---
         cor_patrimonio = CORES["lucro"] if lucro >= 0 else CORES["prejuizo"]
         self.card_patrimonio.lbl_valor.configure(
             text=f"R$ {patrimonio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
@@ -296,7 +267,6 @@ class AppBTC(ctk.CTk):
             text_color=cor_patrimonio
         )
 
-        # --- Posição ---
         self.lbl_brl.configure(
             text=f"R$ {capital_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         )
@@ -309,15 +279,11 @@ class AppBTC(ctk.CTk):
                 text=f"R$ {preco_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
                 text_color=CORES["texto_primario"]
             )
-            self.lbl_variacao.configure(
-                text=f"{var_pm:+.2f}%",
-                text_color=cor_pm
-            )
+            self.lbl_variacao.configure(text=f"{var_pm:+.2f}%", text_color=cor_pm)
         else:
             self.lbl_preco_medio.configure(text="—", text_color=CORES["texto_primario"])
             self.lbl_variacao.configure(text="—", text_color=CORES["texto_primario"])
 
-        # --- Métricas ---
         self.metricas_labels["compras"].configure(text=str(estado.get("total_compras", 0)))
         self.metricas_labels["vendas"].configure(text=str(estado.get("total_vendas", 0)))
         self.metricas_labels["taxas"].configure(
@@ -328,26 +294,18 @@ class AppBTC(ctk.CTk):
             text=f"{var_total:+.2f}%",
             text_color=CORES["lucro"] if var_total >= 0 else CORES["prejuizo"]
         )
-
-        # Buy-and-hold (placeholder por enquanto)
         self.metricas_labels["buy_hold"].configure(
             text="— (em breve)", text_color=CORES["texto_apagado"]
         )
-
-        # Próximo aporte
         self.metricas_labels["proximo_aporte"].configure(
             text=self._calcular_proximo_aporte(estado),
             text_color=CORES["texto_primario"]
         )
 
-        # --- Trades ---
         self._atualizar_trades(historico)
-
-        # --- Gráfico ---
         self._atualizar_grafico(historico, inicial)
 
     def _calcular_proximo_aporte(self, estado):
-        """Calcula quanto tempo falta para o próximo aporte."""
         ultimo = estado.get("ultimo_aporte_ts", "")
         if not ultimo:
             return "agora"
@@ -370,7 +328,6 @@ class AppBTC(ctk.CTk):
             return "—"
 
     def _atualizar_trades(self, historico):
-        """Mostra os últimos 15 trades."""
         self.txt_trades.configure(state="normal")
         self.txt_trades.delete("1.0", "end")
 
@@ -394,17 +351,13 @@ class AppBTC(ctk.CTk):
         self.txt_trades.configure(state="disabled")
 
     def _atualizar_grafico(self, historico, inicial):
-        """Desenha o gráfico de patrimônio ao longo do tempo."""
         self.ax.clear()
 
         if historico and len(historico) >= 2:
             valores = []
             saldo = inicial
             for t in historico:
-                if t.get("tipo") == "COMPRA":
-                    saldo -= t.get("taxa_brl", 0)
-                elif t.get("tipo") == "VENDA":
-                    saldo -= t.get("taxa_brl", 0)
+                saldo -= t.get("taxa_brl", 0)
                 valores.append(saldo)
 
             self.ax.plot(
