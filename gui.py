@@ -28,13 +28,15 @@ class AppBTC(ctk.CTk):
 
         # --- Configuração da janela ---
         self.title("BTC Paper Trader")
-        self.geometry("1000x700")
+        self.geometry("1000x780")
+        self.minsize(900, 700)
         self.configure(fg_color=CORES["bg_principal"])
         ctk.set_appearance_mode("dark")
 
         # --- Grid principal ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=1)  # linha do gráfico expande
+        self.grid_rowconfigure(3, weight=2)   # frame inferior (trades/métricas) cresce mais
+        self.grid_rowconfigure(4, weight=1)   # gráfico cresce menos
 
         # --- Título ---
         titulo = ctk.CTkLabel(
@@ -49,10 +51,10 @@ class AppBTC(ctk.CTk):
         self.frame_topo.grid_columnconfigure((0, 1), weight=1)
 
         self.card_preco = self._criar_card(self.frame_topo, "PREÇO BTC", "R$ —", "—")
-        self.card_preco.grid(row=0, column=0, sticky="ew", padx=(0, 10))
+        self.card_preco.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
         self.card_patrimonio = self._criar_card(self.frame_topo, "PATRIMÔNIO", "R$ —", "—")
-        self.card_patrimonio.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+        self.card_patrimonio.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
         # --- Card posição ---
         self.frame_posicao = ctk.CTkFrame(
@@ -67,16 +69,17 @@ class AppBTC(ctk.CTk):
         )
         self.lbl_posicao_titulo.grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(10, 5))
 
-        self.lbl_brl = self._criar_label_posicao(self.frame_posicao, "BRL", "—", 0, 1)
-        self.lbl_btc = self._criar_label_posicao(self.frame_posicao, "BTC", "—", 0, 2)
-        self.lbl_preco_medio = self._criar_label_posicao(self.frame_posicao, "PREÇO MÉDIO", "—", 0, 3)
+        self.lbl_brl = self._criar_label_posicao(self.frame_posicao, "BRL", "—", 0, 0)
+        self.lbl_btc = self._criar_label_posicao(self.frame_posicao, "BTC", "—", 0, 1)
+        self.lbl_preco_medio = self._criar_label_posicao(self.frame_posicao, "PREÇO MÉDIO", "—", 0, 2)
+        self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
 
         # --- Frame inferior: trades + métricas ---
-        self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent", height=200)
         self.frame_baixo.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
         self.frame_baixo.grid_columnconfigure(0, weight=1)
         self.frame_baixo.grid_columnconfigure(1, weight=1)
-        self.frame_baixo.grid_rowconfigure(0, weight=1)
+        self.frame_baixo.grid_rowconfigure(0, weight=1, minsize=200)
 
         # --- Card últimos trades ---
         self.card_trades = ctk.CTkFrame(
@@ -95,7 +98,7 @@ class AppBTC(ctk.CTk):
             self.card_trades, font=FONTE_PEQUENA,
             fg_color=CORES["bg_secundario"],
             text_color=CORES["texto_primario"],
-            border_width=0, height=150
+            border_width=0, height=180, wrap="none"
         )
         self.txt_trades.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         self.txt_trades.configure(state="disabled")
@@ -113,21 +116,24 @@ class AppBTC(ctk.CTk):
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 5))
 
         self.metricas_labels = {}
-        for i, (chave, rotulo) in enumerate([
+        linhas_metricas = [
             ("compras", "Compras"),
             ("vendas", "Vendas"),
             ("taxas", "Taxas pagas"),
             ("variacao", "Variação"),
-        ], start=1):
+            ("buy_hold", "Buy-and-hold"),
+            ("proximo_aporte", "Próximo aporte"),
+        ]
+        for i, (chave, rotulo) in enumerate(linhas_metricas, start=1):
             ctk.CTkLabel(
                 self.card_metricas, text=f"{rotulo}:",
                 font=FONTE_LABEL, text_color=CORES["texto_secundario"]
-            ).grid(row=i, column=0, sticky="w", padx=(15, 10), pady=3)
+            ).grid(row=i, column=0, sticky="w", padx=(15, 10), pady=4)
             lbl = ctk.CTkLabel(
                 self.card_metricas, text="—",
                 font=FONTE_LABEL, text_color=CORES["texto_primario"]
             )
-            lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=3)
+            lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=4)
             self.metricas_labels[chave] = lbl
 
         # --- Gráfico ---
@@ -289,18 +295,25 @@ class AppBTC(ctk.CTk):
         )
 
         # --- Posição ---
-        self.lbl_brl.configure(text=f"R$ {capital_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        self.lbl_brl.configure(
+            text=f"R$ {capital_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
         self.lbl_btc.configure(text=f"{capital_btc:.8f}")
 
         if preco_medio > 0:
             var_pm = (preco - preco_medio) / preco_medio * 100
             cor_pm = CORES["lucro"] if var_pm >= 0 else CORES["prejuizo"]
             self.lbl_preco_medio.configure(
-                text=f"R$ {preco_medio:,.2f}  ({var_pm:+.2f}%)".replace(",", "X").replace(".", ",").replace("X", "."),
+                text=f"R$ {preco_medio:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
+                text_color=CORES["texto_primario"]
+            )
+            self.lbl_variacao.configure(
+                text=f"{var_pm:+.2f}%",
                 text_color=cor_pm
             )
         else:
             self.lbl_preco_medio.configure(text="—", text_color=CORES["texto_primario"])
+            self.lbl_variacao.configure(text="—", text_color=CORES["texto_primario"])
 
         # --- Métricas ---
         self.metricas_labels["compras"].configure(text=str(estado.get("total_compras", 0)))
@@ -314,11 +327,50 @@ class AppBTC(ctk.CTk):
             text_color=CORES["lucro"] if var_total >= 0 else CORES["prejuizo"]
         )
 
+        # Buy-and-hold (se tivesse comprado tudo no início)
+        btc_hold = inicial / preco_medio if preco_medio > 0 else 0
+        # Aproximação: usa preço atual para estimar
+        # (na prática, precisaríamos do preço do primeiro trade)
+        lucro_hold_pct = 0.0  # placeholder simples
+        self.metricas_labels["buy_hold"].configure(
+            text="— (em breve)", text_color=CORES["texto_apagado"]
+        )
+
+        # Próximo aporte
+        self.metricas_labels["proximo_aporte"].configure(
+            text=self._calcular_proximo_aporte(estado),
+            text_color=CORES["texto_primario"]
+        )
+
         # --- Trades ---
         self._atualizar_trades(historico)
 
         # --- Gráfico ---
         self._atualizar_grafico(historico, inicial)
+
+    def _calcular_proximo_aporte(self, estado):
+        """Calcula quanto tempo falta para o próximo aporte."""
+        from datetime import timezone
+        ultimo = estado.get("ultimo_aporte_ts", "")
+        if not ultimo:
+            return "agora"
+        try:
+            dt_ultimo = datetime.fromisoformat(ultimo)
+            if dt_ultimo.tzinfo is None:
+                dt_ultimo = dt_ultimo.replace(tzinfo=timezone.utc)
+            agora = datetime.now(timezone.utc)
+            segundos_passados = (agora - dt_ultimo).total_seconds()
+            segundos_alvo = CONFIG["intervalo_aporte_horas"] * 3600
+            restante = segundos_alvo - segundos_passados
+            if restante <= 0:
+                return "agora"
+            horas = int(restante // 3600)
+            minutos = int((restante % 3600) // 60)
+            if horas > 0:
+                return f"em {horas}h {minutos}min"
+            return f"em {minutos}min"
+        except (ValueError, TypeError):
+            return "—"
 
     def _atualizar_trades(self, historico):
         """Mostra os últimos 15 trades."""
@@ -348,43 +400,37 @@ class AppBTC(ctk.CTk):
         """Desenha o gráfico de patrimônio ao longo do tempo."""
         self.ax.clear()
 
-        if historico:
+        if historico and len(historico) >= 2:
             # Reconstrói patrimônio aproximado ao longo do tempo
             # (simplificação: mostra o valor de cada trade e o saldo acumulado)
-            timestamps = []
             valores = []
             saldo = inicial
             for t in historico:
-                ts = t.get("timestamp", "")[:19].replace("T", " ")
-                timestamps.append(ts)
                 if t.get("tipo") == "COMPRA":
                     saldo -= t.get("taxa_brl", 0)
                 elif t.get("tipo") == "VENDA":
                     saldo -= t.get("taxa_brl", 0)
                 valores.append(saldo)
 
-            if len(valores) >= 2:
-                self.ax.plot(
-                    range(len(valores)), valores,
-                    color=CORES["verde_matrix"], linewidth=2,
-                    marker="o", markersize=4,
-                    markerfacecolor=CORES["verde_neon"],
-                )
-                self.ax.fill_between(
-                    range(len(valores)), valores,
-                    alpha=0.15, color=CORES["verde_matrix"]
-                )
-                self.ax.axhline(
-                    inicial, color=CORES["texto_apagado"],
-                    linestyle="--", linewidth=1, alpha=0.5
-                )
-                self.ax.set_xticks([])
-                self.ax.tick_params(colors=CORES["texto_secundario"], labelsize=8)
-                for spine in self.ax.spines.values():
-                    spine.set_color(CORES["verde_escuro"])
-                self.ax.grid(True, alpha=0.1, color=CORES["verde_matrix"])
-            else:
-                self._grafico_vazio()
+            self.ax.plot(
+                range(len(valores)), valores,
+                color=CORES["verde_matrix"], linewidth=2,
+                marker="o", markersize=4,
+                markerfacecolor=CORES["verde_neon"],
+            )
+            self.ax.fill_between(
+                range(len(valores)), valores,
+                alpha=0.15, color=CORES["verde_matrix"]
+            )
+            self.ax.axhline(
+                inicial, color=CORES["texto_apagado"],
+                linestyle="--", linewidth=1, alpha=0.5
+            )
+            self.ax.set_xticks([])
+            self.ax.tick_params(colors=CORES["texto_secundario"], labelsize=8)
+            for spine in self.ax.spines.values():
+                spine.set_color(CORES["verde_escuro"])
+            self.ax.grid(True, alpha=0.1, color=CORES["verde_matrix"])
         else:
             self._grafico_vazio()
 
