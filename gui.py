@@ -6,7 +6,7 @@ Não controla nada — só mostra.
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import customtkinter as ctk
 import matplotlib
@@ -28,15 +28,15 @@ class AppBTC(ctk.CTk):
 
         # --- Configuração da janela ---
         self.title("BTC Paper Trader")
-        self.geometry("1000x780")
-        self.minsize(900, 700)
+        self.geometry("1000x820")
+        self.minsize(900, 750)
         self.configure(fg_color=CORES["bg_principal"])
         ctk.set_appearance_mode("dark")
 
         # --- Grid principal ---
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(3, weight=2)   # frame inferior (trades/métricas) cresce mais
-        self.grid_rowconfigure(4, weight=1)   # gráfico cresce menos
+        self.grid_rowconfigure(3, weight=3)   # frame inferior (trades/métricas) cresce mais
+        self.grid_rowconfigure(4, weight=2)   # gráfico cresce um pouco
 
         # --- Título ---
         titulo = ctk.CTkLabel(
@@ -75,11 +75,11 @@ class AppBTC(ctk.CTk):
         self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
 
         # --- Frame inferior: trades + métricas ---
-        self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent", height=200)
+        self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_baixo.grid(row=3, column=0, sticky="nsew", padx=20, pady=10)
-        self.frame_baixo.grid_columnconfigure(0, weight=1)
-        self.frame_baixo.grid_columnconfigure(1, weight=1)
-        self.frame_baixo.grid_rowconfigure(0, weight=1, minsize=200)
+        self.frame_baixo.grid_columnconfigure(0, weight=3)   # trades mais largo
+        self.frame_baixo.grid_columnconfigure(1, weight=2)   # métricas mais estreito
+        self.frame_baixo.grid_rowconfigure(0, weight=1)
 
         # --- Card últimos trades ---
         self.card_trades = ctk.CTkFrame(
@@ -98,7 +98,7 @@ class AppBTC(ctk.CTk):
             self.card_trades, font=FONTE_PEQUENA,
             fg_color=CORES["bg_secundario"],
             text_color=CORES["texto_primario"],
-            border_width=0, height=180, wrap="none"
+            border_width=0, height=160, wrap="none"
         )
         self.txt_trades.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
         self.txt_trades.configure(state="disabled")
@@ -109,6 +109,8 @@ class AppBTC(ctk.CTk):
         )
         self.card_metricas.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         self.card_metricas.grid_columnconfigure(1, weight=1)
+        self.card_metricas.grid_rowconfigure(0, weight=0)   # título fixo
+        self.card_metricas.grid_rowconfigure(7, weight=1)   # sobra vai para o fim
 
         ctk.CTkLabel(
             self.card_metricas, text="MÉTRICAS",
@@ -128,12 +130,12 @@ class AppBTC(ctk.CTk):
             ctk.CTkLabel(
                 self.card_metricas, text=f"{rotulo}:",
                 font=FONTE_LABEL, text_color=CORES["texto_secundario"]
-            ).grid(row=i, column=0, sticky="w", padx=(15, 10), pady=4)
+            ).grid(row=i, column=0, sticky="w", padx=(15, 10), pady=6)
             lbl = ctk.CTkLabel(
                 self.card_metricas, text="—",
                 font=FONTE_LABEL, text_color=CORES["texto_primario"]
             )
-            lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=4)
+            lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=6)
             self.metricas_labels[chave] = lbl
 
         # --- Gráfico ---
@@ -327,11 +329,7 @@ class AppBTC(ctk.CTk):
             text_color=CORES["lucro"] if var_total >= 0 else CORES["prejuizo"]
         )
 
-        # Buy-and-hold (se tivesse comprado tudo no início)
-        btc_hold = inicial / preco_medio if preco_medio > 0 else 0
-        # Aproximação: usa preço atual para estimar
-        # (na prática, precisaríamos do preço do primeiro trade)
-        lucro_hold_pct = 0.0  # placeholder simples
+        # Buy-and-hold (placeholder por enquanto)
         self.metricas_labels["buy_hold"].configure(
             text="— (em breve)", text_color=CORES["texto_apagado"]
         )
@@ -350,7 +348,6 @@ class AppBTC(ctk.CTk):
 
     def _calcular_proximo_aporte(self, estado):
         """Calcula quanto tempo falta para o próximo aporte."""
-        from datetime import timezone
         ultimo = estado.get("ultimo_aporte_ts", "")
         if not ultimo:
             return "agora"
@@ -401,8 +398,6 @@ class AppBTC(ctk.CTk):
         self.ax.clear()
 
         if historico and len(historico) >= 2:
-            # Reconstrói patrimônio aproximado ao longo do tempo
-            # (simplificação: mostra o valor de cada trade e o saldo acumulado)
             valores = []
             saldo = inicial
             for t in historico:
