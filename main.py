@@ -74,10 +74,13 @@ class MotorSimulador:
         self.historico.append(trade.to_dict())
 
     def iniciar(self):
-        self.thread.start()
+        if not self.thread.is_alive():
+            self.thread.start()
 
     def parar(self):
         self.rodando = False
+        if self.thread.is_alive():
+            self.thread.join(timeout=2)
 
     def _loop(self):
         while self.rodando:
@@ -101,7 +104,7 @@ class MotorSimulador:
                         self._registrar_trade(trade)
 
                     self.preco_atual = preco
-                    self.ultimo_update = datetime.now()
+                    self.ultimo_update = datetime.now(timezone.utc)
                     self._salvar_estado()
                     self._salvar_historico()
 
@@ -122,6 +125,7 @@ class AppBTC(ctk.CTk):
     def __init__(self):
         super().__init__()
 
+        self._after_id = None
         self.title("BTC Paper Trader")
         self.geometry("1100x780")
         self.minsize(1000, 720)
@@ -295,11 +299,21 @@ class AppBTC(ctk.CTk):
         return lbl
 
     def _ao_fechar(self):
+        if self._after_id is not None:
+            try:
+                self.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
         self.motor.parar()
         self.destroy()
 
     # -----------------------------------------------------------------
     def atualizar_gui(self):
+        if not self.winfo_exists():
+            return
+
         with self.motor.lock:
             estado = self.motor.estado
             historico = list(self.motor.historico)
@@ -319,7 +333,7 @@ class AppBTC(ctk.CTk):
                 text_color=CORES["amarelo_pastel"]
             )
 
-        self.after(2000, self.atualizar_gui)
+        self._after_id = self.after(2000, self.atualizar_gui)
 
     def _atualizar_tela(self, estado, historico, preco):
         capital_brl = estado.capital_brl
@@ -438,15 +452,16 @@ class AppBTC(ctk.CTk):
         else:
             for t in historico[-15:][::-1]:
                 tipo = t.get("tipo", "?")
-                preco = t.get("preco_brl", 0)
-                valor = t.get("valor_brl", 0)
-                motivo = t.get("motivo", "")
-                ts = t.get("timestamp", "")[:19].replace("T", " ")
+                preco = float(t.get("preco_brl", 0) or 0)
+                valor = float(t.get("valor_brl", 0) or 0)
+                motivo = str(t.get("motivo", "")).strip() or "-"
+                ts_raw = str(t.get("timestamp", "")).strip()
+                ts = ts_raw[:19].replace("T", " ") if ts_raw else "-"
 
                 sinal = "[+]" if tipo == "COMPRA" else "[-]"
                 self.txt_trades.insert(
                     "end",
-                    f"{sinal} {ts}  {motivo:<14}  "
+                    f"{sinal} {ts:<19}  {motivo:<14}  "
                     f"R$ {valor:>10,.2f}  @ R$ {preco:,.2f}\n"
                 )
 
