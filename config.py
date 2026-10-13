@@ -31,9 +31,6 @@ CONFIG = {
     # --- Custos ---
     "taxa_operacao_pct": 0.1,
 
-    # --- Conversão ---
-    "usd_brl_fixo": 4.98,
-
     # --- Arquivos ---
     "state_file": "state.json",
     "history_file": "history.json",
