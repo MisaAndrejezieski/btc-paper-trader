@@ -252,28 +252,41 @@ class AppBTC(ctk.CTk):
         self._after_id = None
         self._ultimo_grafico_renderizado = None
         self.title("BTC Paper Trader")
-        self.geometry("1240x900")
-        self.minsize(1080, 760)
+        largura_tela = self.winfo_screenwidth()
+        altura_tela = self.winfo_screenheight()
+        largura_inicial = min(1240, max(760, largura_tela - 80))
+        altura_inicial = min(900, max(560, altura_tela - 100))
+        self.geometry(f"{largura_inicial}x{altura_inicial}")
+        self.minsize(min(760, largura_tela - 40), min(560, altura_tela - 80))
         self.configure(fg_color=CORES["bg_principal"])
         ctk.set_appearance_mode("dark")
+
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.conteudo = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            scrollbar_button_color=CORES["verde_escuro"],
+            scrollbar_button_hover_color=CORES["verde_matrix"],
+        )
+        self.conteudo.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
+        self.conteudo.grid_columnconfigure(0, weight=1)
+        self.conteudo.grid_rowconfigure(4, weight=3, minsize=265)
+        self.conteudo.grid_rowconfigure(5, weight=2, minsize=135)
 
         # Motor
         self.motor = MotorSimulador()
         self.motor.iniciar()
 
         # Grid principal: 7 linhas, coluna única
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(4, weight=3, minsize=265)
-        self.grid_rowconfigure(5, weight=2, minsize=135)
-
         # ----- LINHA 0: Título -----
         ctk.CTkLabel(
-            self, text="⚡ BTC PAPER TRADER",
+            self.conteudo, text="⚡ BTC PAPER TRADER",
             font=FONTE_TITULO, text_color=CORES["verde_matrix"]
         ).grid(row=0, column=0, pady=(15, 5), sticky="w", padx=20)
 
         # ----- LINHA 1: Preço + Patrimônio -----
-        self.frame_topo = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_topo = ctk.CTkFrame(self.conteudo, fg_color="transparent")
         self.frame_topo.grid(row=1, column=0, sticky="ew", padx=20, pady=5)
         self.frame_topo.grid_columnconfigure((0, 1), weight=1)
 
@@ -284,7 +297,7 @@ class AppBTC(ctk.CTk):
         self.card_patrimonio.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
         # ----- LINHA 2: Posição -----
-        self.frame_posicao = ctk.CTkFrame(self, fg_color=CORES["bg_card"], corner_radius=10)
+        self.frame_posicao = ctk.CTkFrame(self.conteudo, fg_color=CORES["bg_card"], corner_radius=10)
         self.frame_posicao.grid(row=2, column=0, sticky="ew", padx=20, pady=10)
         self.frame_posicao.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
@@ -299,7 +312,7 @@ class AppBTC(ctk.CTk):
         self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
 
         # ----- LINHA 3: Operações manuais -----
-        self.frame_manual = ctk.CTkFrame(self, fg_color=CORES["bg_card"], corner_radius=10)
+        self.frame_manual = ctk.CTkFrame(self.conteudo, fg_color=CORES["bg_card"], corner_radius=10)
         self.frame_manual.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_manual.grid_columnconfigure((0, 1), weight=1, uniform="ordem")
 
@@ -342,7 +355,7 @@ class AppBTC(ctk.CTk):
 
         # ----- LINHA 4: Cotação e expectativa de mercado -----
         self.frame_graficos = ctk.CTkFrame(
-            self, fg_color=CORES["bg_card"], corner_radius=10
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
         )
         self.frame_graficos.grid(row=4, column=0, sticky="nsew", padx=20, pady=(0, 10))
         self.frame_graficos.grid_columnconfigure(0, weight=1)
@@ -358,6 +371,7 @@ class AppBTC(ctk.CTk):
         self.fig, self.axes = plt.subplots(1, 2, figsize=(12, 2.55), dpi=90)
         self.fig.patch.set_facecolor(CORES["bg_card"])
         self.canvas_graficos = FigureCanvasTkAgg(self.fig, master=self.frame_graficos)
+        self.canvas_graficos.get_tk_widget().configure(width=1)
         self.canvas_graficos.get_tk_widget().grid(
             row=1, column=0, sticky="nsew", padx=14, pady=(4, 0)
         )
@@ -368,7 +382,7 @@ class AppBTC(ctk.CTk):
             font=FONTE_PEQUENA,
             text_color=CORES["texto_secundario"],
             anchor="w",
-            wraplength=1160,
+            wraplength=max(400, largura_inicial - 100),
         )
         self.lbl_previsao_status.grid(
             row=2, column=0, sticky="ew", padx=16, pady=(0, 4)
@@ -387,7 +401,7 @@ class AppBTC(ctk.CTk):
         self.widgets_fontes_analistas = []
 
         # ----- LINHA 5: Trades + Métricas (lado a lado) -----
-        self.frame_baixo = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_baixo = ctk.CTkFrame(self.conteudo, fg_color="transparent")
         self.frame_baixo.grid(row=5, column=0, sticky="nsew", padx=20, pady=10)
         self.frame_baixo.grid_columnconfigure(0, weight=3, uniform="painel")
         self.frame_baixo.grid_columnconfigure(1, weight=2, uniform="painel")
@@ -452,12 +466,30 @@ class AppBTC(ctk.CTk):
             self, text="Iniciando...",
             font=FONTE_PEQUENA, text_color=CORES["texto_apagado"]
         )
-        self.lbl_status.grid(row=6, column=0, sticky="w", padx=20, pady=(0, 10))
+        self.lbl_status.grid(row=1, column=0, sticky="ew", padx=16, pady=(4, 8))
+        self.bind("<Configure>", self._ajustar_largura_textos, add="+")
 
         self.protocol("WM_DELETE_WINDOW", self._ao_fechar)
         self.atualizar_gui()
 
     # -----------------------------------------------------------------
+    def _ajustar_largura_textos(self, event):
+        if event.widget is not self:
+            return
+        self.conteudo.configure(
+            width=max(400, self.winfo_width() - 16),
+            height=max(300, self.winfo_height() - 60),
+        )
+        largura = max(400, self.winfo_width() - 48)
+        largura_grafico = max(480, self.winfo_width() - 104)
+        canvas_grafico = self.canvas_graficos.get_tk_widget()
+        if int(canvas_grafico.cget("width")) != largura_grafico:
+            canvas_grafico.configure(width=largura_grafico)
+        self.lbl_previsao_status.configure(
+            wraplength=max(400, self.conteudo.winfo_width() - 64)
+        )
+        self.lbl_status.configure(wraplength=largura)
+
     def _criar_card(self, parent, titulo, valor, variacao):
         card = ctk.CTkFrame(parent, fg_color=CORES["bg_card"], corner_radius=10)
         card.grid_columnconfigure(0, weight=1)
@@ -496,13 +528,29 @@ class AppBTC(ctk.CTk):
 
     def _ao_fechar(self):
         if self._after_id is not None:
-            try:
-                self.after_cancel(self._after_id)
-            except Exception:
-                pass
+            self.after_cancel(self._after_id)
             self._after_id = None
 
         self.motor.parar()
+        widgets = [self]
+        for widget in widgets:
+            widgets.extend(widget.winfo_children())
+        callbacks = {
+            callback_id: self.tk.call("after", "info", callback_id)[0]
+            for callback_id in self.tk.splitlist(self.tk.call("after", "info"))
+        }
+        for callback_id, script in callbacks.items():
+            owner = next(
+                (
+                    widget for widget in widgets
+                    if script in (widget._tclCommands or ())
+                ),
+                None,
+            )
+            if owner is not None:
+                owner.after_cancel(callback_id)
+
+        plt.close(self.fig)
         self.destroy()
 
     @staticmethod
@@ -727,7 +775,9 @@ class AppBTC(ctk.CTk):
             )
             intervalo = "Projeção indisponível até haver histórico suficiente."
 
-        self.fig.tight_layout(pad=1.2)
+        self.fig.subplots_adjust(
+            left=0.08, right=0.99, top=0.88, bottom=0.20, wspace=0.16
+        )
         self.canvas_graficos.draw_idle()
 
         if atualizado_analistas:
