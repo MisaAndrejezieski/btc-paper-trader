@@ -776,8 +776,8 @@ class AppBTC(ctk.CTk):
             for index, article in enumerate(artigos[:4]):
                 sinal = "+" if article.sentiment > 0 else "−"
                 titulo = article.title
-                if len(titulo) > 42:
-                    titulo = f"{titulo[:39].rstrip()}..."
+                if len(titulo) > 24:
+                    titulo = f"{titulo[:21].rstrip()}..."
                 texto = f"{article.publisher} {sinal} {titulo}"
                 button = ctk.CTkButton(
                     self.frame_fontes_analistas,
