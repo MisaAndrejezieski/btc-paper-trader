@@ -4,8 +4,6 @@ Função pura: recebe estado + preço, devolve a ação.
 Isso facilita testes e troca de estratégia depois.
 """
 
-from datetime import datetime, timezone
-
 from config import CONFIG
 from models import Estado
 
@@ -13,14 +11,11 @@ from models import Estado
 def decidir_acao(estado: Estado, preco_brl: float) -> dict:
     """
     Retorna um dict com a ação a executar:
-      {"acao": "COMPRA", "valor_brl": 150.0, "motivo": "aporte"}
       {"acao": "COMPRA", "valor_brl": 300.0, "motivo": "compra_extra"}
       {"acao": "VENDA", "percentual": 30, "motivo": "take_profit"}
       {"acao": "VENDA", "percentual": 50, "motivo": "stop_loss"}
       {"acao": "NADA"}
     """
-    agora = datetime.now(timezone.utc)
-
     # --- Verifica stop-loss PRIMEIRO (proteção é prioridade) ---
     if CONFIG["stop_loss_ativo"] and estado.preco_medio_brl > 0:
         variacao = (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
@@ -41,33 +36,15 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
                 "motivo": "take_profit",
             }
 
-    # --- Verifica aporte periódico ---
-    if estado.ultimo_aporte_ts:
-        ultimo = datetime.fromisoformat(estado.ultimo_aporte_ts)
-        horas = (agora - ultimo).total_seconds() / 3600
-        if horas >= CONFIG["intervalo_aporte_horas"]:
-            if estado.capital_brl >= CONFIG["valor_aporte_brl"]:
-                return {
-                    "acao": "COMPRA",
-                    "valor_brl": CONFIG["valor_aporte_brl"],
-                    "motivo": "aporte",
-                }
-    else:
-        # Primeira execução: faz o primeiro aporte
-        if estado.capital_brl >= CONFIG["valor_aporte_brl"]:
-            return {
-                "acao": "COMPRA",
-                "valor_brl": CONFIG["valor_aporte_brl"],
-                "motivo": "aporte",
-            }
-
     # --- Verifica compra extra em queda forte ---
     if estado.ultima_compra_ts and estado.capital_brl > 0:
-        ultima_compra_preco = estado.preco_medio_brl  # aproximação
+        ultima_compra_preco = (
+            estado.ultimo_preco_compra_brl or estado.preco_medio_brl
+        )
         if ultima_compra_preco > 0:
             variacao = (preco_brl - ultima_compra_preco) / ultima_compra_preco
             if variacao <= -(CONFIG["queda_para_compra_extra_pct"] / 100):
-                valor = CONFIG["valor_aporte_brl"] * CONFIG["multiplicador_compra_extra"]
+                valor = CONFIG["valor_compra_base_brl"] * CONFIG["multiplicador_compra_extra"]
                 if estado.capital_brl >= valor:
                     return {
                         "acao": "COMPRA",

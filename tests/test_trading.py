@@ -16,7 +16,13 @@ from main import (
 from models import Estado
 from market_insights import analisar_feed_analistas, calcular_previsao
 from report import imprimir_snapshot
-from simulator import executar_compra, executar_venda_quantidade
+from simulator import (
+    executar_compra,
+    executar_venda_quantidade,
+    registrar_deposito,
+    registrar_saque,
+)
+from strategy import decidir_acao
 
 
 class SimulatorTests(unittest.TestCase):
@@ -41,6 +47,50 @@ class SimulatorTests(unittest.TestCase):
             executar_venda_quantidade(self.estado, 200_000, 0.001, "manual")
         self.assertEqual(self.estado.capital_brl, 1000)
         self.assertEqual(self.estado.total_vendas, 0)
+
+    def test_deposit_and_withdrawal_are_cash_flow_not_trades(self):
+        deposito = registrar_deposito(self.estado, 250)
+        self.assertEqual(deposito.tipo, "DEPOSITO")
+        self.assertEqual(deposito.valor_brl, 250)
+        self.assertEqual(self.estado.capital_brl, 1250)
+        self.assertEqual(self.estado.total_compras, 0)
+        self.assertEqual(self.estado.total_vendas, 0)
+
+        saque = registrar_saque(self.estado, 100)
+        self.assertEqual(saque.tipo, "SAQUE")
+        self.assertEqual(saque.valor_brl, 100)
+        self.assertEqual(self.estado.capital_brl, 1150)
+        self.assertEqual(self.estado.total_taxas_brl, 0)
+
+    def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
+        for operacao in (registrar_deposito, registrar_saque):
+            for valor in (0, -1, math.inf, math.nan):
+                with self.subTest(operacao=operacao.__name__, valor=valor):
+                    with self.assertRaises(ValueError):
+                        operacao(self.estado, valor)
+                    self.assertEqual(self.estado.capital_brl, 1000)
+
+    def test_withdrawal_cannot_exceed_available_brl(self):
+        with self.assertRaisesRegex(ValueError, "excede"):
+            registrar_saque(self.estado, 1000.01)
+        self.assertEqual(self.estado.capital_brl, 1000)
+
+    def test_strategy_does_not_buy_periodically_from_existing_balance(self):
+        self.estado.capital_btc = 0.01
+        self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
+        self.estado.ultimo_aporte_ts = "2000-01-01T00:00:00+00:00"
+        self.assertEqual(decidir_acao(self.estado, 200_000), {"acao": "NADA"})
+
+    def test_extra_buy_uses_price_of_last_purchase_not_average(self):
+        self.estado.capital_btc = 0.01
+        self.estado.preco_medio_brl = 200_000
+        self.estado.ultimo_preco_compra_brl = 300_000
+        self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
+
+        acao = decidir_acao(self.estado, 280_000)
+
+        self.assertEqual(acao["acao"], "COMPRA")
+        self.assertEqual(acao["motivo"], "compra_extra")
 
     def test_manual_order_requires_live_quote_and_persists_trade(self):
         motor = MotorSimulador.__new__(MotorSimulador)

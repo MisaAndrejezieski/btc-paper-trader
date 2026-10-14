@@ -7,9 +7,8 @@ CONFIG = {
     # --- Capital inicial ---
     "capital_inicial_brl": 5000.00,
 
-    # --- Aporte periódico (DCA) ---
-    "intervalo_aporte_horas": 24,
-    "valor_aporte_brl": 150.00,
+    # --- Valor base de compra extra ---
+    "valor_compra_base_brl": 150.00,
 
     # --- Compra extra em queda forte ---
     "queda_para_compra_extra_pct": 5.0,
@@ -34,5 +33,6 @@ CONFIG = {
     # --- Arquivos ---
     "state_file": "state.json",
     "history_file": "history.json",
+    "cash_flow_file": "cash_flow.json",
     "cache_dir": "data",
 }

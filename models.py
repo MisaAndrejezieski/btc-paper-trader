@@ -24,13 +24,25 @@ class Trade:
 
 
 @dataclass
+class CashFlow:
+    """Depósito ou saque manual, separado do histórico de trades."""
+    timestamp: str
+    tipo: str               # "DEPOSITO" ou "SAQUE"
+    valor_brl: float
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
 class Estado:
     """Estado atual do simulador (persistido em state.json)."""
     capital_brl: float = 0.0
     capital_btc: float = 0.0
     preco_medio_brl: float = 0.0
     ultima_compra_ts: str = ""          # timestamp da última compra
-    ultimo_aporte_ts: str = ""          # timestamp do último aporte
+    ultimo_preco_compra_brl: float = 0.0
+    ultimo_aporte_ts: str = ""          # mantido para ler estados antigos
     total_compras: int = 0
     total_vendas: int = 0
     total_taxas_brl: float = 0.0

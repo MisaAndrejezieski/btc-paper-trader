@@ -11,13 +11,24 @@ def _formatar_reais(valor: float, sinal: bool = False) -> str:
 
 
 def imprimir_snapshot(
-    estado: Estado, preco_brl: float, preco_inicial_brl: float | None = None
+    estado: Estado,
+    preco_brl: float,
+    preco_inicial_brl: float | None = None,
+    fluxo_caixa: list[dict] | None = None,
 ) -> None:
     """Imprime o estado atual + métricas de performance."""
     valor_btc = estado.capital_btc * preco_brl
     patrimonio = estado.capital_brl + valor_btc
-    lucro = patrimonio - estado.patrimonio_inicial_brl
-    lucro_pct = (lucro / estado.patrimonio_inicial_brl) * 100 if estado.patrimonio_inicial_brl else 0
+    fluxo_caixa = fluxo_caixa or []
+    depositos = sum(
+        item["valor_brl"] for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
+    )
+    saques = sum(
+        item["valor_brl"] for item in fluxo_caixa if item["tipo"] == "SAQUE"
+    )
+    capital_aportado = estado.patrimonio_inicial_brl + depositos - saques
+    lucro = patrimonio - capital_aportado
+    lucro_pct = (lucro / capital_aportado) * 100 if capital_aportado > 0 else 0
 
     if preco_inicial_brl is not None and preco_inicial_brl > 0:
         btc_hold = estado.patrimonio_inicial_brl / preco_inicial_brl
@@ -46,6 +57,9 @@ def imprimir_snapshot(
     print(f"  Valor em BTC (BRL):   R$ {_formatar_reais(valor_btc):>12}")
     print("-" * 60)
     print(f"  Patrimônio total:     R$ {_formatar_reais(patrimonio):>12}")
+    print(f"  Depósitos totais:     R$ {_formatar_reais(depositos):>12}")
+    print(f"  Saques totais:        R$ {_formatar_reais(saques):>12}")
+    print(f"  Capital líquido:      R$ {_formatar_reais(capital_aportado):>12}")
     print(f"  Lucro/prejuízo:       R$ {_formatar_reais(lucro, sinal=True):>12}  ({lucro_pct:+.2f}%)")
     if lucro_hold is None:
         print("  Buy-and-hold:         indisponível (informe o preço inicial)")

@@ -7,7 +7,35 @@ from datetime import datetime, timezone
 from math import isfinite
 
 from config import CONFIG
-from models import Estado, Trade
+from models import CashFlow, Estado, Trade
+
+
+def registrar_deposito(estado: Estado, valor_brl: float) -> CashFlow:
+    """Adiciona dinheiro ao saldo BRL sem executar um trade."""
+    if not isfinite(valor_brl) or valor_brl <= 0:
+        raise ValueError("O valor do depósito precisa ser maior que zero.")
+
+    estado.capital_brl += valor_brl
+    return CashFlow(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        tipo="DEPOSITO",
+        valor_brl=valor_brl,
+    )
+
+
+def registrar_saque(estado: Estado, valor_brl: float) -> CashFlow:
+    """Retira dinheiro do saldo BRL sem executar um trade."""
+    if not isfinite(valor_brl) or valor_brl <= 0:
+        raise ValueError("O valor do saque precisa ser maior que zero.")
+    if valor_brl > estado.capital_brl:
+        raise ValueError("O valor do saque excede o saldo disponível em reais.")
+
+    estado.capital_brl -= valor_brl
+    return CashFlow(
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        tipo="SAQUE",
+        valor_brl=valor_brl,
+    )
 
 
 def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: str) -> Trade:
@@ -38,8 +66,7 @@ def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: 
     estado.capital_btc = novo_total_btc
     estado.preco_medio_brl = novo_preco_medio
     estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
-    if motivo == "aporte":
-        estado.ultimo_aporte_ts = estado.ultima_compra_ts
+    estado.ultimo_preco_compra_brl = preco_brl
     estado.total_compras += 1
     estado.total_taxas_brl += taxa
 

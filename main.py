@@ -33,7 +33,13 @@ from market_insights import (
     calcular_previsao,
 )
 from models import Estado
-from simulator import executar_compra, executar_venda, executar_venda_quantidade
+from simulator import (
+    executar_compra,
+    executar_venda,
+    executar_venda_quantidade,
+    registrar_deposito,
+    registrar_saque,
+)
 from strategy import decidir_acao
 from theme import (CORES, FONTE_LABEL, FONTE_PEQUENA, FONTE_SUBTITULO,
                    FONTE_TITULO, FONTE_VALOR, FONTE_VALOR_MEDIO)
@@ -54,6 +60,7 @@ class MotorSimulador:
     def __init__(self):
         self.estado = self._carregar_estado()
         self.historico = self._carregar_historico()
+        self.fluxo_caixa = self._carregar_fluxo_caixa()
         self.preco_atual = None
         self.fonte_preco = ""
         self.preco_atualizado = False
@@ -91,6 +98,15 @@ class MotorSimulador:
                 pass
         return []
 
+    def _carregar_fluxo_caixa(self):
+        if not os.path.exists(CONFIG["cash_flow_file"]):
+            return []
+        with open(CONFIG["cash_flow_file"], "r", encoding="utf-8") as f:
+            fluxo_caixa = json.load(f)
+        if not isinstance(fluxo_caixa, list):
+            raise ValueError("O arquivo de fluxo de caixa precisa conter uma lista.")
+        return fluxo_caixa
+
     def _salvar_estado(self):
         with open(CONFIG["state_file"], "w", encoding="utf-8") as f:
             json.dump(self.estado.to_dict(), f, indent=2)
@@ -98,6 +114,10 @@ class MotorSimulador:
     def _salvar_historico(self):
         with open(CONFIG["history_file"], "w", encoding="utf-8") as f:
             json.dump(self.historico, f, indent=2, ensure_ascii=False)
+
+    def _salvar_fluxo_caixa(self):
+        with open(CONFIG["cash_flow_file"], "w", encoding="utf-8") as f:
+            json.dump(self.fluxo_caixa, f, indent=2, ensure_ascii=False)
 
     def _registrar_trade(self, trade):
         if trade is None:
@@ -132,6 +152,22 @@ class MotorSimulador:
             self._salvar_estado()
             self._salvar_historico()
             return trade
+
+    def depositar_manual(self, valor_brl: float):
+        with self.lock:
+            evento = registrar_deposito(self.estado, valor_brl)
+            self.fluxo_caixa.append(evento.to_dict())
+            self._salvar_estado()
+            self._salvar_fluxo_caixa()
+            return evento
+
+    def sacar_manual(self, valor_brl: float):
+        with self.lock:
+            evento = registrar_saque(self.estado, valor_brl)
+            self.fluxo_caixa.append(evento.to_dict())
+            self._salvar_estado()
+            self._salvar_fluxo_caixa()
+            return evento
 
     def iniciar(self):
         if not self.thread.is_alive():
@@ -311,13 +347,13 @@ class AppBTC(ctk.CTk):
         self.lbl_preco_medio = self._criar_label_posicao(self.frame_posicao, "PREÇO MÉDIO", "—", 0, 2)
         self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
 
-        # ----- LINHA 3: Operações manuais -----
+        # ----- LINHA 3: Trades manuais e fluxo de caixa -----
         self.frame_manual = ctk.CTkFrame(self.conteudo, fg_color=CORES["bg_card"], corner_radius=10)
         self.frame_manual.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_manual.grid_columnconfigure((0, 1), weight=1, uniform="ordem")
 
         ctk.CTkLabel(
-            self.frame_manual, text="OPERAÇÃO MANUAL (paper trading)",
+            self.frame_manual, text="TRADES MANUAIS (paper trading)",
             font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(8, 4))
 
@@ -350,6 +386,43 @@ class AppBTC(ctk.CTk):
         self.entrada_venda.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         ctk.CTkButton(
             self.grupo_venda, text="Vender BTC", command=self._vender_manual,
+            fg_color="#a63d40", hover_color="#7d2d30", width=130
+        ).grid(row=0, column=2, sticky="e")
+
+        ctk.CTkLabel(
+            self.frame_manual, text="FLUXO DE CAIXA (não é trade)",
+            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=15, pady=(0, 4))
+
+        self.grupo_deposito = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
+        self.grupo_deposito.grid(row=3, column=0, sticky="ew", padx=(15, 10), pady=(0, 10))
+        self.grupo_deposito.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            self.grupo_deposito, text="Depositar (R$)", font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"]
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.entrada_deposito = ctk.CTkEntry(
+            self.grupo_deposito, placeholder_text="ex.: 500,00", width=130
+        )
+        self.entrada_deposito.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            self.grupo_deposito, text="Depositar", command=self._depositar_manual,
+            fg_color=CORES["verde_matrix"], hover_color=CORES["verde_escuro"], width=130
+        ).grid(row=0, column=2, sticky="e")
+
+        self.grupo_saque = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
+        self.grupo_saque.grid(row=3, column=1, sticky="ew", padx=(10, 15), pady=(0, 10))
+        self.grupo_saque.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(
+            self.grupo_saque, text="Sacar (R$)", font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"]
+        ).grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.entrada_saque = ctk.CTkEntry(
+            self.grupo_saque, placeholder_text="ex.: 200,00", width=130
+        )
+        self.entrada_saque.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ctk.CTkButton(
+            self.grupo_saque, text="Sacar", command=self._sacar_manual,
             fg_color="#a63d40", hover_color="#7d2d30", width=130
         ).grid(row=0, column=2, sticky="e")
 
@@ -431,10 +504,6 @@ class AppBTC(ctk.CTk):
         self.card_metricas = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
         self.card_metricas.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         self.card_metricas.grid_columnconfigure(1, weight=1)
-        # Cada linha tem peso igual, exceto a última que absorve sobra
-        for r in range(6):
-            self.card_metricas.grid_rowconfigure(r + 1, weight=1)
-
         ctk.CTkLabel(
             self.card_metricas, text="MÉTRICAS",
             font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
@@ -445,10 +514,15 @@ class AppBTC(ctk.CTk):
             ("compras", "Compras"),
             ("vendas", "Vendas"),
             ("taxas", "Taxas pagas"),
-            ("variacao", "Variação"),
-            ("buy_hold", "Buy-and-hold"),
-            ("proximo_aporte", "Próximo aporte"),
+            ("depositos", "Depósitos"),
+            ("saques", "Saques"),
+            ("capital_aportado", "Capital líquido"),
+            ("lucro", "Lucro/prejuízo"),
+            ("rentabilidade", "Rentabilidade"),
         ]
+        for r in range(len(linhas_metricas)):
+            self.card_metricas.grid_rowconfigure(r + 1, weight=1)
+
         for i, (chave, rotulo) in enumerate(linhas_metricas, start=1):
             ctk.CTkLabel(
                 self.card_metricas, text=f"{rotulo}:",
@@ -591,6 +665,32 @@ class AppBTC(ctk.CTk):
         except (OSError, ValueError, RuntimeError) as e:
             messagebox.showerror("Não foi possível vender", str(e), parent=self)
 
+    def _depositar_manual(self):
+        try:
+            valor = self._ler_numero(self.entrada_deposito.get())
+            evento = self.motor.depositar_manual(valor)
+            self.entrada_deposito.delete(0, "end")
+            messagebox.showinfo(
+                "Depósito registrado",
+                f"Depósito de R$ {formatar_reais(evento.valor_brl)} registrado.",
+                parent=self,
+            )
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Não foi possível depositar", str(e), parent=self)
+
+    def _sacar_manual(self):
+        try:
+            valor = self._ler_numero(self.entrada_saque.get())
+            evento = self.motor.sacar_manual(valor)
+            self.entrada_saque.delete(0, "end")
+            messagebox.showinfo(
+                "Saque registrado",
+                f"Saque de R$ {formatar_reais(evento.valor_brl)} registrado.",
+                parent=self,
+            )
+        except (OSError, ValueError) as e:
+            messagebox.showerror("Não foi possível sacar", str(e), parent=self)
+
     @staticmethod
     def _para_horario_local(timestamp: str | datetime) -> datetime:
         dt = (
@@ -610,6 +710,7 @@ class AppBTC(ctk.CTk):
         with self.motor.lock:
             estado = self.motor.estado
             historico = list(self.motor.historico)
+            fluxo_caixa = list(self.motor.fluxo_caixa)
             preco = self.motor.preco_atual
             ultimo_update = self.motor.ultimo_update
             fonte_preco = self.motor.fonte_preco
@@ -624,7 +725,9 @@ class AppBTC(ctk.CTk):
             erro_analise = self.motor.erro_analise
 
         if preco and estado:
-            self._atualizar_tela(estado, historico, preco, fonte_preco)
+            self._atualizar_tela(
+                estado, historico, preco, fonte_preco, fluxo_caixa
+            )
             ts = (
                 self._para_horario_local(ultimo_update).strftime("%d/%m %H:%M:%S")
                 if ultimo_update else "—"
@@ -846,16 +949,24 @@ class AppBTC(ctk.CTk):
                 self.botoes_fontes_analistas.append(button)
                 self.widgets_fontes_analistas.append(button)
 
-    def _atualizar_tela(self, estado, historico, preco, fonte_preco):
+    def _atualizar_tela(self, estado, historico, preco, fonte_preco, fluxo_caixa):
         capital_brl = estado.capital_brl
         capital_btc = estado.capital_btc
         preco_medio = estado.preco_medio_brl
-        inicial = estado.patrimonio_inicial_brl or 1
+        depositos = sum(
+            float(item["valor_brl"])
+            for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
+        )
+        saques = sum(
+            float(item["valor_brl"])
+            for item in fluxo_caixa if item["tipo"] == "SAQUE"
+        )
+        capital_aportado = estado.patrimonio_inicial_brl + depositos - saques
 
         valor_btc = capital_btc * preco
         patrimonio = capital_brl + valor_btc
-        lucro = patrimonio - inicial
-        lucro_pct = (lucro / inicial * 100) if inicial else 0
+        lucro = patrimonio - capital_aportado
+        lucro_pct = (lucro / capital_aportado * 100) if capital_aportado > 0 else 0
 
         self.card_preco.lbl_valor.configure(
             text=f"R$ {formatar_reais(preco)}"
@@ -897,60 +1008,25 @@ class AppBTC(ctk.CTk):
         self.metricas_labels["taxas"].configure(
             text=f"R$ {formatar_reais(estado.total_taxas_brl)}"
         )
-        var_total = ((patrimonio - inicial) / inicial * 100) if inicial else 0
-        self.metricas_labels["variacao"].configure(
-            text=f"{var_total:+.2f}%",
-            text_color=CORES["lucro"] if var_total >= 0 else CORES["prejuizo"]
+        self.metricas_labels["depositos"].configure(
+            text=f"R$ {formatar_reais(depositos)}"
         )
-
-        if historico:
-            primeiro = historico[0]
-            preco_inicial = primeiro.get("preco_brl", 0)
-            if preco_inicial > 0:
-                btc_hold = inicial / preco_inicial
-                patrimonio_hold = btc_hold * preco
-                lucro_hold = patrimonio_hold - inicial
-                lucro_hold_pct = (lucro_hold / inicial) * 100
-                cor_hold = CORES["lucro"] if lucro_hold >= 0 else CORES["prejuizo"]
-                self.metricas_labels["buy_hold"].configure(
-                    text=f"{lucro_hold_pct:+.2f}%",
-                    text_color=cor_hold
-                )
-            else:
-                self.metricas_labels["buy_hold"].configure(
-                    text="—", text_color=CORES["texto_apagado"]
-                )
-        else:
-            self.metricas_labels["buy_hold"].configure(
-                text="—", text_color=CORES["texto_apagado"]
-            )
-
-        self.metricas_labels["proximo_aporte"].configure(
-            text=self._calcular_proximo_aporte(estado),
-            text_color=CORES["texto_primario"]
+        self.metricas_labels["saques"].configure(
+            text=f"R$ {formatar_reais(saques)}"
+        )
+        self.metricas_labels["capital_aportado"].configure(
+            text=f"R$ {formatar_reais(capital_aportado)}"
+        )
+        self.metricas_labels["lucro"].configure(
+            text=f"R$ {formatar_reais(lucro, sinal=True)}",
+            text_color=CORES["lucro"] if lucro >= 0 else CORES["prejuizo"]
+        )
+        self.metricas_labels["rentabilidade"].configure(
+            text=f"{lucro_pct:+.2f}%",
+            text_color=CORES["lucro"] if lucro_pct >= 0 else CORES["prejuizo"]
         )
 
         self._atualizar_trades(historico)
-
-    def _calcular_proximo_aporte(self, estado):
-        ultimo = estado.ultimo_aporte_ts
-        if not ultimo:
-            return "agora"
-        try:
-            dt_ultimo = self._para_horario_local(ultimo)
-            agora = datetime.now(timezone.utc)
-            segundos_passados = (agora - dt_ultimo.astimezone(timezone.utc)).total_seconds()
-            segundos_alvo = CONFIG["intervalo_aporte_horas"] * 3600
-            restante = segundos_alvo - segundos_passados
-            if restante <= 0:
-                return "agora"
-            horas = int(restante // 3600)
-            minutos = int((restante % 3600) // 60)
-            if horas > 0:
-                return f"em {horas}h {minutos}min"
-            return f"em {minutos}min"
-        except (ValueError, TypeError):
-            return "—"
 
     def _atualizar_trades(self, historico):
         self.txt_trades.configure(state="normal")
