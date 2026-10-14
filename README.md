@@ -60,7 +60,8 @@ movimentações manuais de saldo, separadas do histórico de trades.
   próximas 24h, com faixa baseada na volatilidade observada. A projeção combina
   momentum recente e um ajuste limitado pelo sinal de matérias que reportam
   perspectivas direcionais de analistas em CoinDesk e Cointelegraph. As matérias
-  são exibidas como links; o sentimento é uma classificação lexical simples,
+  são exibidas em um painel próprio como links, com título, fonte, autoria,
+  horário e sinal classificado; o sentimento é uma classificação lexical simples,
   não consenso de mercado nem previsão oficial. Se não houver matérias
   elegíveis, a projeção usa apenas os dados de mercado.
 - **Atualização dos gráficos:** acompanha o ciclo de cotação (5 minutos);

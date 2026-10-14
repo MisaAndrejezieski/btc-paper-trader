@@ -422,9 +422,10 @@ class AppBTC(ctk.CTk):
         )
         self.conteudo.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
         self.conteudo.grid_columnconfigure(0, weight=1)
-        self.conteudo.grid_rowconfigure(4, weight=3, minsize=265)
+        self.conteudo.grid_rowconfigure(4, weight=3, minsize=330)
         self.conteudo.grid_rowconfigure(6, weight=2, minsize=220)
         self.conteudo.grid_rowconfigure(7, weight=2, minsize=220)
+        self.conteudo.grid_rowconfigure(8, weight=2, minsize=220)
 
         # Motor
         self.motor = MotorSimulador()
@@ -549,16 +550,16 @@ class AppBTC(ctk.CTk):
         )
         self.frame_graficos.grid(row=4, column=0, sticky="nsew", padx=20, pady=(0, 10))
         self.frame_graficos.grid_columnconfigure(0, weight=1)
-        self.frame_graficos.grid_rowconfigure(1, weight=1, minsize=185)
+        self.frame_graficos.grid_rowconfigure(1, weight=1, minsize=260)
 
         ctk.CTkLabel(
             self.frame_graficos,
-            text="MERCADO BTC/BRL",
+            text="BTC/BRL · PREÇO OBSERVADO E CENÁRIO",
             font=FONTE_SUBTITULO,
             text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 0))
 
-        self.fig, self.axes = plt.subplots(1, 2, figsize=(12, 2.55), dpi=90)
+        self.fig, self.axes = plt.subplots(1, 2, figsize=(12, 3.25), dpi=90)
         self.fig.patch.set_facecolor(CORES["bg_card"])
         self.canvas_graficos = FigureCanvasTkAgg(self.fig, master=self.frame_graficos)
         self.canvas_graficos.get_tk_widget().configure(width=1)
@@ -569,24 +570,62 @@ class AppBTC(ctk.CTk):
         self.lbl_previsao_status = ctk.CTkLabel(
             self.frame_graficos,
             text="Aguardando dados de mercado...",
+            font=FONTE_LABEL,
+            text_color=CORES["verde_pastel"],
+            anchor="w",
+            wraplength=max(400, largura_inicial - 100),
+        )
+        self.lbl_previsao_status.grid(
+            row=2, column=0, sticky="ew", padx=16, pady=(5, 2)
+        )
+
+        self.lbl_modelo_status = ctk.CTkLabel(
+            self.frame_graficos,
+            text=(
+                "Estimativa experimental baseada em momentum recente, "
+                "volatilidade observada e sinal limitado de notícias."
+            ),
             font=FONTE_PEQUENA,
             text_color=CORES["texto_secundario"],
             anchor="w",
             wraplength=max(400, largura_inicial - 100),
         )
-        self.lbl_previsao_status.grid(
-            row=2, column=0, sticky="ew", padx=16, pady=(0, 4)
+        self.lbl_modelo_status.grid(
+            row=3, column=0, sticky="ew", padx=16, pady=(0, 4)
         )
 
+        # ----- Painel independente de notícias -----
+        self.frame_noticias = ctk.CTkFrame(
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
+        )
+        self.frame_noticias.grid(
+            row=5, column=0, sticky="ew", padx=20, pady=(0, 10)
+        )
+        self.frame_noticias.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self.frame_noticias,
+            text="NOTÍCIAS E PERSPECTIVAS DE ANALISTAS",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 2))
+        self.lbl_noticias_status = ctk.CTkLabel(
+            self.frame_noticias,
+            text="Aguardando consulta aos feeds...",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
+            anchor="w",
+            wraplength=max(400, largura_inicial - 100),
+        )
+        self.lbl_noticias_status.grid(
+            row=1, column=0, sticky="ew", padx=15, pady=(0, 6)
+        )
         self.frame_fontes_analistas = ctk.CTkFrame(
-            self.frame_graficos, fg_color="transparent"
+            self.frame_noticias, fg_color="transparent"
         )
         self.frame_fontes_analistas.grid(
-            row=3, column=0, sticky="ew", padx=12, pady=(0, 7)
+            row=2, column=0, sticky="ew", padx=12, pady=(0, 8)
         )
-        self.frame_fontes_analistas.grid_columnconfigure(
-            (0, 1, 2, 3), weight=1, uniform="fonte"
-        )
+        self.frame_fontes_analistas.grid_columnconfigure(0, weight=1)
         self.botoes_fontes_analistas = []
         self.widgets_fontes_analistas = []
 
@@ -594,7 +633,7 @@ class AppBTC(ctk.CTk):
             self.frame_graficos, fg_color="transparent"
         )
         self.frame_controles_backtest.grid(
-            row=4, column=0, sticky="ew", padx=15, pady=(0, 10)
+            row=5, column=0, sticky="ew", padx=15, pady=(0, 10)
         )
         self.frame_controles_backtest.grid_columnconfigure(3, weight=1)
         ctk.CTkLabel(
@@ -627,12 +666,12 @@ class AppBTC(ctk.CTk):
         )
         self.lbl_backtest_status.grid(row=0, column=3, sticky="ew")
 
-        # ----- LINHA 5: Resultado do backtest -----
+        # ----- LINHA 6: Resultado do backtest -----
         self.frame_resultado_backtest = ctk.CTkFrame(
             self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
         )
         self.frame_resultado_backtest.grid(
-            row=5, column=0, sticky="ew", padx=20, pady=(0, 10)
+            row=6, column=0, sticky="ew", padx=20, pady=(0, 10)
         )
         self.frame_resultado_backtest.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
@@ -654,12 +693,12 @@ class AppBTC(ctk.CTk):
         )
         self.frame_resultado_backtest.grid_remove()
 
-        # ----- LINHA 6: Patrimônio histórico -----
+        # ----- LINHA 7: Patrimônio histórico -----
         self.frame_patrimonio = ctk.CTkFrame(
             self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
         )
         self.frame_patrimonio.grid(
-            row=6, column=0, sticky="ew", padx=20, pady=(0, 10)
+            row=7, column=0, sticky="ew", padx=20, pady=(0, 10)
         )
         self.frame_patrimonio.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
@@ -680,9 +719,9 @@ class AppBTC(ctk.CTk):
             row=1, column=0, sticky="ew", padx=14, pady=(4, 10)
         )
 
-        # ----- LINHA 7: Trades + Métricas (lado a lado) -----
+        # ----- LINHA 8: Trades + Métricas (lado a lado) -----
         self.frame_baixo = ctk.CTkFrame(self.conteudo, fg_color="transparent")
-        self.frame_baixo.grid(row=7, column=0, sticky="nsew", padx=20, pady=10)
+        self.frame_baixo.grid(row=8, column=0, sticky="nsew", padx=20, pady=10)
         self.frame_baixo.grid_columnconfigure(0, weight=3, uniform="painel")
         self.frame_baixo.grid_columnconfigure(1, weight=2, uniform="painel")
         self.frame_baixo.grid_rowconfigure(0, weight=1)
@@ -788,6 +827,12 @@ class AppBTC(ctk.CTk):
             if int(widget.cget("width")) != largura_grafico:
                 widget.configure(width=largura_grafico)
         self.lbl_previsao_status.configure(
+            wraplength=max(400, self.conteudo.winfo_width() - 64)
+        )
+        self.lbl_modelo_status.configure(
+            wraplength=max(400, self.conteudo.winfo_width() - 64)
+        )
+        self.lbl_noticias_status.configure(
             wraplength=max(400, self.conteudo.winfo_width() - 64)
         )
         self.lbl_status.configure(wraplength=largura)
@@ -1234,51 +1279,126 @@ class AppBTC(ctk.CTk):
             )
 
         ax_previsao.set_title(
-            "PROJEÇÃO ESTATÍSTICA · PRÓXIMAS 24H",
-            color=CORES["verde_pastel"], fontsize=10, loc="left",
+            "CENÁRIO ESTIMADO · PRÓXIMAS 24H",
+            color=CORES["verde_pastel"], fontsize=10, loc="left", pad=9,
         )
         if previsao:
             previsao_local = [p.timestamp.astimezone(FUSO_LOCAL) for p in previsao]
             esperados = [p.expected_brl for p in previsao]
             minimos = [p.low_brl for p in previsao]
             maximos = [p.high_brl for p in previsao]
+
+            if historico:
+                contexto = [
+                    (ts.astimezone(FUSO_LOCAL), valor)
+                    for ts, valor in historico[-6:]
+                ]
+                ax_previsao.plot(
+                    [item[0] for item in contexto],
+                    [item[1] for item in contexto],
+                    color=CORES["texto_secundario"],
+                    linewidth=1.5,
+                    linestyle=":",
+                    label="real recente",
+                    zorder=2,
+                )
             ax_previsao.fill_between(
                 previsao_local, minimos, maximos,
-                color=CORES["azul_pastel"], alpha=0.18, label="faixa modelada",
+                color=CORES["azul_pastel"],
+                alpha=0.20,
+                label="faixa estimada",
+                zorder=1,
             )
-            ax_previsao.plot(
-                previsao_local, esperados, color=CORES["azul_pastel"],
-                linewidth=2, label="cenário central",
-            )
-            if historico:
-                contexto = historico[-6:]
-                ax_previsao.plot(
-                    [ts.astimezone(FUSO_LOCAL) for ts, _ in contexto],
-                    [valor for _, valor in contexto],
-                    color=CORES["texto_secundario"], linewidth=1.2,
-                    linestyle="--", label="histórico recente",
-                )
-            ax_previsao.legend(
-                loc="upper center", ncol=3, fontsize=7, frameon=False,
-                labelcolor=CORES["texto_secundario"],
-            )
-            final = previsao[-1]
+            preco_final = esperados[-1]
             variacao = (
-                (final.expected_brl / preco_atual - 1) * 100
+                (preco_final / preco_atual - 1) * 100
                 if preco_atual else 0.0
             )
-            intervalo = (
-                f"Esperado em 24h: R$ {formatar_reais(final.expected_brl)} "
-                f"({variacao:+.2f}%) · Faixa: "
-                f"R$ {formatar_reais(final.low_brl)}–{formatar_reais(final.high_brl)}"
+            cor_cenario = (
+                CORES["lucro"] if variacao > 0
+                else CORES["prejuizo"] if variacao < 0
+                else CORES["azul_pastel"]
+            )
+            ax_previsao.plot(
+                previsao_local, esperados, color=cor_cenario,
+                linewidth=2.4, label="cenário central",
+                zorder=3,
+            )
+            inicio = previsao_local[0]
+            fim = previsao_local[-1]
+            ax_previsao.axvline(
+                inicio, color=CORES["amarelo_pastel"],
+                linewidth=1, linestyle="--", alpha=0.8,
+            )
+            if preco_atual is not None:
+                ax_previsao.scatter(
+                    [inicio], [preco_atual], color=CORES["amarelo_pastel"],
+                    edgecolors=CORES["bg_secundario"], linewidths=0.7,
+                    s=42, zorder=5, label="agora",
+                )
+            ax_previsao.scatter(
+                [fim], [preco_final], color=cor_cenario, s=34,
+                edgecolors=CORES["bg_secundario"], linewidths=0.7,
+                zorder=5,
+            )
+            ax_previsao.annotate(
+                f"24h  {variacao:+.1f}%",
+                xy=(fim, preco_final),
+                xytext=(-8, 10 if variacao >= 0 else -16),
+                textcoords="offset points",
+                ha="right",
+                color=cor_cenario,
+                fontsize=8,
+                fontweight="bold",
+            )
+            inicio_contexto = (
+                contexto[0][0]
+                if historico and contexto else inicio
+            )
+            ax_previsao.set_xlim(inicio_contexto, fim)
+            ax_previsao.xaxis.set_major_formatter(
+                mdates.DateFormatter("%Hh", tz=FUSO_LOCAL)
+            )
+            ax_previsao.xaxis.set_major_locator(
+                mdates.HourLocator(interval=6, tz=FUSO_LOCAL)
+            )
+            ax_previsao.set_xlabel(
+                "horário local", color=CORES["texto_secundario"], fontsize=8
+            )
+            ax_previsao.legend(
+                loc="upper left", ncol=1, fontsize=7, frameon=False,
+                labelcolor=CORES["texto_secundario"],
+            )
+            ax_previsao.margins(y=0.18)
+            eixo_previsao_status = (
+                f"CENÁRIO CENTRAL EM 24H: R$ {formatar_reais(preco_final)} "
+                f"({variacao:+.2f}%)   ·   "
+                f"FAIXA MODELADA: R$ {formatar_reais(minimos[-1])}–"
+                f"R$ {formatar_reais(maximos[-1])}"
+            )
+            cor_previsao_status = cor_cenario
+            faixa_total_pct = (
+                (maximos[-1] - minimos[-1]) / preco_atual * 100
+                if preco_atual else 0.0
+            )
+            detalhe_cenario = (
+                f"Referência atual: R$ {formatar_reais(preco_atual or 0)}  ·  "
+                f"A faixa tem amplitude de {faixa_total_pct:.2f}% do preço atual; "
+                "não representa probabilidade nem garantia."
             )
         else:
             ax_previsao.text(
-                0.5, 0.5, "Aguardando dados horários suficientes",
+                0.5, 0.5,
+                "Ainda não há dados horários suficientes\npara estimar as próximas 24h.",
                 ha="center", va="center", color=CORES["texto_apagado"],
                 transform=ax_previsao.transAxes,
             )
-            intervalo = "Projeção indisponível até haver histórico suficiente."
+            eixo_previsao_status = "CENÁRIO DE 24H INDISPONÍVEL"
+            cor_previsao_status = CORES["amarelo_pastel"]
+            detalhe_cenario = (
+                "São necessárias ao menos 6 variações horárias válidas. "
+                "O preço observado continua disponível no gráfico à esquerda."
+            )
 
         self.fig.subplots_adjust(
             left=0.08, right=0.99, top=0.88, bottom=0.20, wspace=0.16
@@ -1297,16 +1417,36 @@ class AppBTC(ctk.CTk):
             ).strftime("%d/%m %H:%M")
         else:
             horario_mercado = "sem histórico"
-        direcao = "positiva" if sentimento > 0.05 else "negativa" if sentimento < -0.05 else "neutra"
+        direcao = "positivo" if sentimento > 0.05 else "negativo" if sentimento < -0.05 else "neutro"
         sentimento_texto = (
-            f"Notícias de analistas: {direcao} ({sentimento:+.2f}; "
-            f"{len(artigos)} matérias, {horario_analistas})"
+            f"sinal das notícias {direcao} ({sentimento:+.2f}, "
+            f"{len(artigos)} matérias; {horario_analistas})"
+        )
+        self.lbl_noticias_status.configure(
+            text=(
+                f"{len(artigos)} matéria(s) direcional(is) recente(s) · "
+                f"sinal agregado {direcao} ({sentimento:+.2f}) · "
+                f"atualizado: {horario_analistas}. "
+                "Leitura lexical de manchetes e descrições; não representa consenso."
+                + (f" Aviso da consulta: {erro}" if erro and not artigos else "")
+            ),
+            text_color=(
+                CORES["lucro"] if sentimento > 0.05
+                else CORES["prejuizo"] if sentimento < -0.05
+                else CORES["texto_secundario"]
+            ),
         )
         self.lbl_previsao_status.configure(
+            text=eixo_previsao_status,
+            text_color=cor_previsao_status,
+        )
+        self.lbl_modelo_status.configure(
             text=(
-                f"{intervalo}  |  Histórico: {horario_mercado}  |  "
-                f"{sentimento_texto}  |  Estimativa, não recomendação."
-                + (f"  |  Aviso: {erro}" if erro else "")
+                f"{detalhe_cenario} Base: momentum das últimas 6h + "
+                f"volatilidade recente; {sentimento_texto}. "
+                f"Dados de mercado atualizados: {horario_mercado}. "
+                "Estimativa experimental, não recomendação."
+                + (f" Aviso: {erro}" if erro else "")
             ),
             text_color=CORES["texto_secundario"],
         )
@@ -1318,35 +1458,43 @@ class AppBTC(ctk.CTk):
         if not artigos:
             mensagem_fontes = ctk.CTkLabel(
                 self.frame_fontes_analistas,
-                text="Sem matérias recentes de analistas com sinal direcional.",
+                text=(
+                    "Nenhuma matéria recente com perspectiva direcional foi encontrada. "
+                    "Os feeds são consultados periodicamente."
+                ),
                 font=FONTE_PEQUENA,
                 text_color=CORES["texto_apagado"],
                 anchor="w",
             )
             mensagem_fontes.grid(
-                row=0, column=0, columnspan=4, sticky="ew", padx=5
+                row=0, column=0, sticky="ew", padx=5
             )
             self.widgets_fontes_analistas.append(mensagem_fontes)
         else:
-            for index, article in enumerate(artigos[:4]):
+            for index, article in enumerate(artigos[:5]):
                 sinal = "+" if article.sentiment > 0 else "−"
-                titulo = article.title
-                if len(titulo) > 24:
-                    titulo = f"{titulo[:21].rstrip()}..."
-                texto = f"{article.publisher} {sinal} {titulo}"
+                publicado = article.published_at.astimezone(
+                    FUSO_LOCAL
+                ).strftime("%d/%m %H:%M")
+                texto = (
+                    f"{article.publisher} · sinal {sinal}{abs(article.sentiment):.2f}"
+                    f" · {publicado}\n{article.title}\n"
+                    f"{article.author} · Abrir matéria"
+                )
                 button = ctk.CTkButton(
                     self.frame_fontes_analistas,
                     text=texto,
                     command=partial(webbrowser.open, article.url),
                     anchor="w",
-                    height=26,
-                    fg_color="transparent",
+                    height=58,
+                    wraplength=max(400, self.conteudo.winfo_width() - 110),
+                    fg_color=CORES["bg_secundario"],
                     hover_color=CORES["bg_destaque"],
                     text_color=CORES["azul_pastel"],
                     font=FONTE_PEQUENA,
                 )
                 button.grid(
-                    row=0, column=index, sticky="ew", padx=3, pady=(0, 2),
+                    row=index, column=0, sticky="ew", padx=3, pady=(0, 5),
                 )
                 self.botoes_fontes_analistas.append(button)
                 self.widgets_fontes_analistas.append(button)
