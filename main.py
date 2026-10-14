@@ -8,7 +8,7 @@ import json
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import partial
 from math import isfinite
 from zoneinfo import ZoneInfo
@@ -716,7 +716,17 @@ class AppBTC(ctk.CTk):
         )
         self.canvas_patrimonio.get_tk_widget().configure(width=1)
         self.canvas_patrimonio.get_tk_widget().grid(
-            row=1, column=0, sticky="ew", padx=14, pady=(4, 10)
+            row=1, column=0, sticky="ew", padx=14, pady=(4, 0)
+        )
+        self.lbl_patrimonio_status = ctk.CTkLabel(
+            self.frame_patrimonio,
+            text="A curva será formada conforme novas amostras forem registradas.",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
+            anchor="w",
+        )
+        self.lbl_patrimonio_status.grid(
+            row=2, column=0, sticky="ew", padx=16, pady=(0, 8)
         )
 
         # ----- LINHA 8: Trades + Métricas (lado a lado) -----
@@ -1626,6 +1636,9 @@ class AppBTC(ctk.CTk):
                 ha="center", va="center", color=CORES["texto_apagado"],
                 transform=eixo.transAxes,
             )
+            self.lbl_patrimonio_status.configure(
+                text="Sem amostras registradas ainda; a primeira será salva na próxima cotação."
+            )
         else:
             timestamps = [
                 self._para_horario_local(point["timestamp"])
@@ -1635,12 +1648,51 @@ class AppBTC(ctk.CTk):
             benchmark = [float(point["benchmark"]) for point in equity_history]
             eixo.plot(
                 timestamps, values, color=CORES["verde_matrix"],
-                linewidth=1.8, label="Estratégia",
+                linewidth=1.8, marker="o",
+                markevery=max(1, len(timestamps) // 20),
+                markersize=7 if len(timestamps) == 1 else 3.5,
+                label="Estratégia",
             )
             eixo.plot(
                 timestamps, benchmark, color=CORES["azul_pastel"],
-                linestyle="--", linewidth=1.4, label="Buy-and-hold BTC",
+                linestyle="--", linewidth=1.4, marker="s",
+                markevery=max(1, len(timestamps) // 20),
+                markersize=6 if len(timestamps) == 1 else 3,
+                label="Buy-and-hold BTC",
             )
+            if len(timestamps) == 1:
+                eixo.set_xlim(
+                    timestamps[0] - timedelta(hours=6),
+                    timestamps[0] + timedelta(hours=6),
+                )
+                eixo.xaxis.set_major_formatter(
+                    mdates.DateFormatter("%H:%M", tz=FUSO_LOCAL)
+                )
+                eixo.xaxis.set_major_locator(
+                    mdates.HourLocator(interval=3, tz=FUSO_LOCAL)
+                )
+                eixo.annotate(
+                    f"1ª amostra · {timestamps[0]:%d/%m %H:%M}",
+                    xy=(timestamps[0], values[0]),
+                    xytext=(8, 12),
+                    textcoords="offset points",
+                    color=CORES["verde_pastel"],
+                    fontsize=8,
+                )
+                self.lbl_patrimonio_status.configure(
+                    text=(
+                        f"1 amostra registrada em {timestamps[0]:%d/%m %H:%M}. "
+                        "A linha evolutiva ficará visível após as próximas atualizações horárias."
+                    )
+                )
+            else:
+                self.lbl_patrimonio_status.configure(
+                    text=(
+                        f"{len(timestamps)} amostras · de "
+                        f"{timestamps[0]:%d/%m %H:%M} a "
+                        f"{timestamps[-1]:%d/%m %H:%M} · registro horário"
+                    )
+                )
             for trade in historico:
                 try:
                     trade_time = self._para_horario_local(trade["timestamp"])
@@ -1659,12 +1711,13 @@ class AppBTC(ctk.CTk):
                     color=CORES["verde_matrix"] if is_buy else CORES["prejuizo"],
                     s=32, zorder=4,
                 )
-            eixo.xaxis.set_major_formatter(
-                mdates.DateFormatter("%d/%m %Hh", tz=FUSO_LOCAL)
-            )
-            eixo.xaxis.set_major_locator(
-                mdates.AutoDateLocator(minticks=4, maxticks=8, tz=FUSO_LOCAL)
-            )
+            if len(timestamps) > 1:
+                eixo.xaxis.set_major_formatter(
+                    mdates.DateFormatter("%d/%m %Hh", tz=FUSO_LOCAL)
+                )
+                eixo.xaxis.set_major_locator(
+                    mdates.AutoDateLocator(minticks=4, maxticks=8, tz=FUSO_LOCAL)
+                )
             eixo.yaxis.set_major_formatter(
                 FuncFormatter(lambda value, pos: f"R$ {value / 1000:.0f} mil")
             )
