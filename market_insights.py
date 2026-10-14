@@ -12,6 +12,9 @@ from statistics import fmean, stdev
 import requests
 
 
+COINGECKO_RANGE_URL = (
+    "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
+)
 COINGECKO_CHART_URL = (
     "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
     "?vs_currency=brl&days=1"
@@ -65,6 +68,41 @@ def buscar_historico_btc_brl() -> list[tuple[datetime, float]]:
     ]
     if len(history) < 2:
         raise ValueError("A API retornou histórico insuficiente para o gráfico.")
+    return history
+
+
+def buscar_historico_btc_brl_periodo(
+    dias: int,
+    now: datetime | None = None,
+) -> list[tuple[datetime, float]]:
+    """Fetch BTC/BRL history for one of the supported backtest periods."""
+    if dias not in (7, 30, 90, 365):
+        raise ValueError("O período precisa ser 7, 30, 90 ou 365 dias.")
+    end = now or datetime.now(timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    end = end.astimezone(timezone.utc)
+    start = end - timedelta(days=dias)
+    response = requests.get(
+        COINGECKO_RANGE_URL,
+        params={
+            "vs_currency": "brl",
+            "from": int(start.timestamp()),
+            "to": int(end.timestamp()),
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    prices = response.json()["prices"]
+    history = [
+        (datetime.fromtimestamp(item[0] / 1000, timezone.utc), float(item[1]))
+        for item in prices
+        if len(item) >= 2
+        and math.isfinite(float(item[1]))
+        and float(item[1]) > 0
+    ]
+    if len(history) < 2:
+        raise ValueError("A API retornou dados insuficientes para o backtest.")
     return history
 
 

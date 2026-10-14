@@ -34,5 +34,6 @@ CONFIG = {
     "state_file": "state.json",
     "history_file": "history.json",
     "cash_flow_file": "cash_flow.json",
+    "equity_file": "equity_history.json",
     "cache_dir": "data",
 }

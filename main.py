@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from functools import partial
 from math import isfinite
 from zoneinfo import ZoneInfo
-from tkinter import messagebox
+from tkinter import filedialog, messagebox
 import webbrowser
 
 import customtkinter as ctk
@@ -29,10 +29,12 @@ from fetcher import Cotacao, buscar_cotacao_btc_brl
 from market_insights import (
     AnalystArticle,
     buscar_historico_btc_brl,
+    buscar_historico_btc_brl_periodo,
     buscar_sentimento_analistas,
     calcular_previsao,
 )
 from models import Estado
+from backtest import simular_backtest
 from simulator import (
     executar_compra,
     executar_venda,
@@ -41,6 +43,11 @@ from simulator import (
     registrar_saque,
 )
 from strategy import decidir_acao
+from trading_analytics import (
+    calcular_metricas_risco,
+    calcular_pnl_realizado,
+    gerar_csv_trades,
+)
 from theme import (CORES, FONTE_LABEL, FONTE_PEQUENA, FONTE_SUBTITULO,
                    FONTE_TITULO, FONTE_VALOR, FONTE_VALOR_MEDIO)
 
@@ -61,6 +68,9 @@ class MotorSimulador:
         self.estado = self._carregar_estado()
         self.historico = self._carregar_historico()
         self.fluxo_caixa = self._carregar_fluxo_caixa()
+        self.equity_history = self._carregar_historico_patrimonio()
+        self._pending_equity_flow = 0.0
+        self.erro_patrimonio = ""
         self.preco_atual = None
         self.fonte_preco = ""
         self.preco_atualizado = False
@@ -107,6 +117,20 @@ class MotorSimulador:
             raise ValueError("O arquivo de fluxo de caixa precisa conter uma lista.")
         return fluxo_caixa
 
+    def _carregar_historico_patrimonio(self):
+        path = CONFIG["equity_file"]
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            print(f"[AVISO] Não foi possível ler o histórico de patrimônio: {exc}")
+            return []
+        if not isinstance(data, list):
+            raise ValueError("O histórico de patrimônio precisa conter uma lista.")
+        return data
+
     def _salvar_estado(self):
         with open(CONFIG["state_file"], "w", encoding="utf-8") as f:
             json.dump(self.estado.to_dict(), f, indent=2)
@@ -118,6 +142,72 @@ class MotorSimulador:
     def _salvar_fluxo_caixa(self):
         with open(CONFIG["cash_flow_file"], "w", encoding="utf-8") as f:
             json.dump(self.fluxo_caixa, f, indent=2, ensure_ascii=False)
+
+    def _salvar_historico_patrimonio(self):
+        with open(CONFIG["equity_file"], "w", encoding="utf-8") as f:
+            json.dump(self.equity_history, f, indent=2, ensure_ascii=False)
+
+    def _registrar_patrimonio(self, preco: float, timestamp, force: bool = False):
+        if not hasattr(self, "equity_history") or not isfinite(preco) or preco <= 0:
+            return
+        now = timestamp if isinstance(timestamp, datetime) else datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
+        now = now.astimezone(timezone.utc)
+        if self.equity_history and not force:
+            anterior = datetime.fromisoformat(self.equity_history[-1]["timestamp"])
+            if anterior.tzinfo is None:
+                anterior = anterior.replace(tzinfo=timezone.utc)
+            if anterior.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0) == now.replace(
+                minute=0, second=0, microsecond=0
+            ):
+                if self.erro_patrimonio:
+                    self._persistir_historico_patrimonio()
+                return
+
+        equity = self.estado.capital_brl + self.estado.capital_btc * preco
+        flow = getattr(self, "_pending_equity_flow", 0.0)
+        if self.equity_history:
+            previous = self.equity_history[-1]
+            units = float(previous["units"])
+            previous_nav = float(previous["nav"])
+            if previous_nav > 0:
+                units += flow / previous_nav
+            if units <= 0 and equity > 0:
+                units = equity
+            nav = equity / units if units > 0 else 0.0
+            benchmark_btc = max(
+                0.0, float(previous["benchmark_btc"]) + flow / preco
+            )
+        else:
+            units = equity
+            nav = 1.0 if equity > 0 else 0.0
+            benchmark_btc = equity / preco
+
+        self.equity_history.append({
+            "timestamp": now.isoformat(),
+            "price": preco,
+            "cash": self.estado.capital_brl,
+            "btc": self.estado.capital_btc,
+            "equity": equity,
+            "nav": nav,
+            "units": units,
+            "benchmark_btc": benchmark_btc,
+            "benchmark": benchmark_btc * preco,
+            "flow": flow,
+        })
+        self.equity_history = self.equity_history[-15000:]
+        self._pending_equity_flow = 0.0
+        self._persistir_historico_patrimonio()
+
+    def _persistir_historico_patrimonio(self):
+        try:
+            self._salvar_historico_patrimonio()
+        except OSError as exc:
+            self.erro_patrimonio = str(exc)
+            print(f"[AVISO] Não foi possível salvar a curva de patrimônio: {exc}")
+        else:
+            self.erro_patrimonio = ""
 
     def _registrar_trade(self, trade):
         if trade is None:
@@ -140,6 +230,9 @@ class MotorSimulador:
             self._registrar_trade(trade)
             self._salvar_estado()
             self._salvar_historico()
+            self._registrar_patrimonio(
+                preco, getattr(self, "ultimo_update", None), force=True
+            )
             return trade
 
     def vender_manual(self, quantidade_btc: float):
@@ -151,6 +244,9 @@ class MotorSimulador:
             self._registrar_trade(trade)
             self._salvar_estado()
             self._salvar_historico()
+            self._registrar_patrimonio(
+                preco, getattr(self, "ultimo_update", None), force=True
+            )
             return trade
 
     def depositar_manual(self, valor_brl: float):
@@ -159,6 +255,11 @@ class MotorSimulador:
             self.fluxo_caixa.append(evento.to_dict())
             self._salvar_estado()
             self._salvar_fluxo_caixa()
+            self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) + valor_brl
+            if getattr(self, "preco_atual", None) is not None:
+                self._registrar_patrimonio(
+                    self.preco_atual, getattr(self, "ultimo_update", None), force=True
+                )
             return evento
 
     def sacar_manual(self, valor_brl: float):
@@ -167,6 +268,11 @@ class MotorSimulador:
             self.fluxo_caixa.append(evento.to_dict())
             self._salvar_estado()
             self._salvar_fluxo_caixa()
+            self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) - valor_brl
+            if getattr(self, "preco_atual", None) is not None:
+                self._registrar_patrimonio(
+                    self.preco_atual, getattr(self, "ultimo_update", None), force=True
+                )
             return evento
 
     def iniciar(self):
@@ -237,19 +343,20 @@ class MotorSimulador:
                         if cotacao.atual
                         else {"acao": "NADA"}
                     )
+                    trade_executado = None
 
                     if acao["acao"] == "COMPRA":
-                        trade = executar_compra(
+                        trade_executado = executar_compra(
                             self.estado, cotacao.preco_brl,
                             acao["valor_brl"], acao["motivo"]
                         )
-                        self._registrar_trade(trade)
+                        self._registrar_trade(trade_executado)
                     elif acao["acao"] == "VENDA":
-                        trade = executar_venda(
+                        trade_executado = executar_venda(
                             self.estado, cotacao.preco_brl,
                             acao["percentual"], acao["motivo"]
                         )
-                        self._registrar_trade(trade)
+                        self._registrar_trade(trade_executado)
 
                     self.preco_atual = cotacao.preco_brl
                     self.fonte_preco = cotacao.fonte
@@ -265,6 +372,11 @@ class MotorSimulador:
                     self.erro_analise = erro_analise
                     self._salvar_estado()
                     self._salvar_historico()
+                    self._registrar_patrimonio(
+                        cotacao.preco_brl,
+                        cotacao.timestamp,
+                        force=trade_executado is not None,
+                    )
 
             except Exception as e:
                 print(f"[ERRO no motor] {e}")
@@ -287,6 +399,9 @@ class AppBTC(ctk.CTk):
 
         self._after_id = None
         self._ultimo_grafico_renderizado = None
+        self._ultimo_patrimonio_renderizado = None
+        self._backtest_em_execucao = False
+        self._toast_after_id = None
         self.title("BTC Paper Trader")
         largura_tela = self.winfo_screenwidth()
         altura_tela = self.winfo_screenheight()
@@ -308,13 +423,15 @@ class AppBTC(ctk.CTk):
         self.conteudo.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 0))
         self.conteudo.grid_columnconfigure(0, weight=1)
         self.conteudo.grid_rowconfigure(4, weight=3, minsize=265)
-        self.conteudo.grid_rowconfigure(5, weight=2, minsize=135)
+        self.conteudo.grid_rowconfigure(6, weight=2, minsize=220)
+        self.conteudo.grid_rowconfigure(7, weight=2, minsize=220)
 
         # Motor
         self.motor = MotorSimulador()
+        self._notified_trade_count = len(self.motor.historico)
         self.motor.iniciar()
 
-        # Grid principal: 7 linhas, coluna única
+        # Grid principal: coluna única, com painéis roláveis
         # ----- LINHA 0: Título -----
         ctk.CTkLabel(
             self.conteudo, text="⚡ BTC PAPER TRADER",
@@ -473,9 +590,99 @@ class AppBTC(ctk.CTk):
         self.botoes_fontes_analistas = []
         self.widgets_fontes_analistas = []
 
-        # ----- LINHA 5: Trades + Métricas (lado a lado) -----
+        self.frame_controles_backtest = ctk.CTkFrame(
+            self.frame_graficos, fg_color="transparent"
+        )
+        self.frame_controles_backtest.grid(
+            row=4, column=0, sticky="ew", padx=15, pady=(0, 10)
+        )
+        self.frame_controles_backtest.grid_columnconfigure(3, weight=1)
+        ctk.CTkLabel(
+            self.frame_controles_backtest,
+            text="BACKTEST",
+            font=FONTE_LABEL,
+            text_color=CORES["verde_pastel"],
+        ).grid(row=0, column=0, padx=(0, 8))
+        self.periodo_backtest = ctk.CTkOptionMenu(
+            self.frame_controles_backtest,
+            values=["7 dias", "30 dias", "90 dias", "1 ano"],
+            width=115,
+        )
+        self.periodo_backtest.grid(row=0, column=1, padx=(0, 8))
+        self.botao_backtest = ctk.CTkButton(
+            self.frame_controles_backtest,
+            text="Rodar backtest",
+            command=self._rodar_backtest,
+            width=130,
+            fg_color=CORES["verde_matrix"],
+            hover_color=CORES["verde_escuro"],
+        )
+        self.botao_backtest.grid(row=0, column=2, padx=(0, 10))
+        self.lbl_backtest_status = ctk.CTkLabel(
+            self.frame_controles_backtest,
+            text="Simulação inicia com 50% em BTC e 50% em caixa.",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
+            anchor="w",
+        )
+        self.lbl_backtest_status.grid(row=0, column=3, sticky="ew")
+
+        # ----- LINHA 5: Resultado do backtest -----
+        self.frame_resultado_backtest = ctk.CTkFrame(
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
+        )
+        self.frame_resultado_backtest.grid(
+            row=5, column=0, sticky="ew", padx=20, pady=(0, 10)
+        )
+        self.frame_resultado_backtest.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self.frame_resultado_backtest,
+            text="BACKTEST · ESTRATÉGIA VS. BUY-AND-HOLD",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 0))
+        self.fig_backtest, self.ax_backtest = plt.subplots(
+            figsize=(11, 2.4), dpi=90
+        )
+        self.fig_backtest.patch.set_facecolor(CORES["bg_card"])
+        self.canvas_backtest = FigureCanvasTkAgg(
+            self.fig_backtest, master=self.frame_resultado_backtest
+        )
+        self.canvas_backtest.get_tk_widget().configure(width=1)
+        self.canvas_backtest.get_tk_widget().grid(
+            row=1, column=0, sticky="ew", padx=14, pady=(4, 10)
+        )
+        self.frame_resultado_backtest.grid_remove()
+
+        # ----- LINHA 6: Patrimônio histórico -----
+        self.frame_patrimonio = ctk.CTkFrame(
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
+        )
+        self.frame_patrimonio.grid(
+            row=6, column=0, sticky="ew", padx=20, pady=(0, 10)
+        )
+        self.frame_patrimonio.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            self.frame_patrimonio,
+            text="PATRIMÔNIO AO LONGO DO TEMPO",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
+        ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 0))
+        self.fig_patrimonio, self.ax_patrimonio = plt.subplots(
+            figsize=(11, 2.4), dpi=90
+        )
+        self.fig_patrimonio.patch.set_facecolor(CORES["bg_card"])
+        self.canvas_patrimonio = FigureCanvasTkAgg(
+            self.fig_patrimonio, master=self.frame_patrimonio
+        )
+        self.canvas_patrimonio.get_tk_widget().configure(width=1)
+        self.canvas_patrimonio.get_tk_widget().grid(
+            row=1, column=0, sticky="ew", padx=14, pady=(4, 10)
+        )
+
+        # ----- LINHA 7: Trades + Métricas (lado a lado) -----
         self.frame_baixo = ctk.CTkFrame(self.conteudo, fg_color="transparent")
-        self.frame_baixo.grid(row=5, column=0, sticky="nsew", padx=20, pady=10)
+        self.frame_baixo.grid(row=7, column=0, sticky="nsew", padx=20, pady=10)
         self.frame_baixo.grid_columnconfigure(0, weight=3, uniform="painel")
         self.frame_baixo.grid_columnconfigure(1, weight=2, uniform="painel")
         self.frame_baixo.grid_rowconfigure(0, weight=1)
@@ -483,13 +690,22 @@ class AppBTC(ctk.CTk):
         # Card trades
         self.card_trades = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
         self.card_trades.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
-        self.card_trades.grid_columnconfigure(0, weight=1)
-        self.card_trades.grid_rowconfigure(1, weight=1)
+        self.card_trades.grid_columnconfigure((0, 1), weight=1)
+        self.card_trades.grid_rowconfigure(2, weight=1)
 
         ctk.CTkLabel(
             self.card_trades, text="ÚLTIMOS TRADES",
             font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
+        ctk.CTkButton(
+            self.card_trades,
+            text="Exportar CSV",
+            command=self._exportar_trades_csv,
+            width=105,
+            height=28,
+            fg_color=CORES["bg_destaque"],
+            hover_color=CORES["verde_escuro"],
+        ).grid(row=0, column=1, sticky="e", padx=15, pady=(8, 4))
 
         self.txt_trades = ctk.CTkTextbox(
             self.card_trades, font=FONTE_PEQUENA,
@@ -497,7 +713,9 @@ class AppBTC(ctk.CTk):
             text_color=CORES["texto_primario"],
             border_width=0, wrap="none"
         )
-        self.txt_trades.grid(row=1, column=0, sticky="nsew", padx=15, pady=(0, 15))
+        self.txt_trades.grid(
+            row=2, column=0, columnspan=2, sticky="nsew", padx=15, pady=(0, 15)
+        )
         self.txt_trades.configure(state="disabled")
 
         # Card métricas
@@ -519,6 +737,12 @@ class AppBTC(ctk.CTk):
             ("capital_aportado", "Capital líquido"),
             ("lucro", "Lucro/prejuízo"),
             ("rentabilidade", "Rentabilidade"),
+            ("drawdown", "Drawdown máximo"),
+            ("sharpe", "Sharpe anualizado"),
+            ("win_rate", "Win rate"),
+            ("profit_factor", "Profit factor"),
+            ("holding_time", "Tempo médio em posição"),
+            ("exposure", "Exposição média em BTC"),
         ]
         for r in range(len(linhas_metricas)):
             self.card_metricas.grid_rowconfigure(r + 1, weight=1)
@@ -535,7 +759,7 @@ class AppBTC(ctk.CTk):
             lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=2)
             self.metricas_labels[chave] = lbl
 
-        # ----- LINHA 6: Status -----
+        # ----- Status -----
         self.lbl_status = ctk.CTkLabel(
             self, text="Iniciando...",
             font=FONTE_PEQUENA, text_color=CORES["texto_apagado"]
@@ -559,6 +783,10 @@ class AppBTC(ctk.CTk):
         canvas_grafico = self.canvas_graficos.get_tk_widget()
         if int(canvas_grafico.cget("width")) != largura_grafico:
             canvas_grafico.configure(width=largura_grafico)
+        for canvas in (self.canvas_backtest, self.canvas_patrimonio):
+            widget = canvas.get_tk_widget()
+            if int(widget.cget("width")) != largura_grafico:
+                widget.configure(width=largura_grafico)
         self.lbl_previsao_status.configure(
             wraplength=max(400, self.conteudo.winfo_width() - 64)
         )
@@ -625,7 +853,162 @@ class AppBTC(ctk.CTk):
                 owner.after_cancel(callback_id)
 
         plt.close(self.fig)
+        plt.close(self.fig_backtest)
+        plt.close(self.fig_patrimonio)
         self.destroy()
+
+    def _exportar_trades_csv(self):
+        destino = filedialog.asksaveasfilename(
+            parent=self,
+            title="Exportar histórico de trades",
+            defaultextension=".csv",
+            filetypes=[("Arquivo CSV", "*.csv")],
+            initialfile="trades_btc.csv",
+        )
+        if not destino:
+            return
+        try:
+            with self.motor.lock:
+                csv_texto = gerar_csv_trades(list(self.motor.historico))
+            with open(destino, "w", encoding="utf-8-sig", newline="") as arquivo:
+                arquivo.write(csv_texto)
+        except OSError as exc:
+            messagebox.showerror(
+                "Não foi possível exportar", str(exc), parent=self
+            )
+            return
+        messagebox.showinfo(
+            "Exportação concluída",
+            f"Trades exportados para:\n{destino}",
+            parent=self,
+        )
+
+    def _rodar_backtest(self):
+        if self._backtest_em_execucao:
+            return
+        with self.motor.lock:
+            preco = (
+                self.motor.preco_atual
+                if self.motor.preco_atualizado else None
+            )
+            capital = (
+                self.motor.estado.capital_brl
+                + self.motor.estado.capital_btc * preco
+                if preco is not None else 0.0
+            )
+        if capital <= 0:
+            self.lbl_backtest_status.configure(
+                text="Backtest indisponível: aguarde cotação online e patrimônio válido.",
+                text_color=CORES["amarelo_pastel"],
+            )
+            return
+
+        periodo_texto = self.periodo_backtest.get()
+        dias = {"7 dias": 7, "30 dias": 30, "90 dias": 90, "1 ano": 365}.get(
+            periodo_texto
+        )
+        if dias is None:
+            self.lbl_backtest_status.configure(
+                text="Selecione um período de backtest válido.",
+                text_color=CORES["amarelo_pastel"],
+            )
+            return
+
+        self._backtest_em_execucao = True
+        self.botao_backtest.configure(state="disabled")
+        self.lbl_backtest_status.configure(
+            text=f"Buscando {periodo_texto} de dados históricos na CoinGecko...",
+            text_color=CORES["texto_secundario"],
+        )
+
+        def trabalho():
+            try:
+                history = buscar_historico_btc_brl_periodo(dias)
+                result = simular_backtest(history, capital)
+            except (
+                RequestException, OSError, RuntimeError, ValueError,
+                KeyError, TypeError, IndexError,
+            ) as exc:
+                self.after(0, self._finalizar_backtest, None, str(exc), periodo_texto)
+            else:
+                self.after(0, self._finalizar_backtest, result, "", periodo_texto)
+
+        threading.Thread(target=trabalho, daemon=True).start()
+
+    def _finalizar_backtest(self, resultado, erro: str, periodo: str):
+        self._backtest_em_execucao = False
+        self.botao_backtest.configure(state="normal")
+        if erro:
+            self.lbl_backtest_status.configure(
+                text=f"Backtest não concluído: {erro}",
+                text_color=CORES["amarelo_pastel"],
+            )
+            return
+        self.frame_resultado_backtest.grid()
+        pontos = resultado["points"]
+        datas = [self._para_horario_local(p["timestamp"]) for p in pontos]
+        estrategia = [p["strategy"] for p in pontos]
+        buy_hold = [p["buy_hold"] for p in pontos]
+        eixo = self.ax_backtest
+        eixo.clear()
+        eixo.set_facecolor(CORES["bg_secundario"])
+        eixo.tick_params(colors=CORES["texto_secundario"], labelsize=8)
+        eixo.grid(True, alpha=0.16, color=CORES["verde_matrix"])
+        eixo.plot(datas, estrategia, color=CORES["verde_matrix"], label="Estratégia")
+        eixo.plot(
+            datas, buy_hold, color=CORES["azul_pastel"],
+            linestyle="--", label="Buy-and-hold",
+        )
+        eixo.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m", tz=FUSO_LOCAL))
+        eixo.xaxis.set_major_locator(
+            mdates.AutoDateLocator(minticks=4, maxticks=8, tz=FUSO_LOCAL)
+        )
+        eixo.yaxis.set_major_formatter(
+            FuncFormatter(lambda value, pos: f"R$ {value / 1000:.0f} mil")
+        )
+        eixo.legend(
+            loc="upper left", fontsize=8, frameon=False,
+            labelcolor=CORES["texto_secundario"],
+        )
+        for spine in eixo.spines.values():
+            spine.set_color(CORES["verde_escuro"])
+        self.fig_backtest.subplots_adjust(left=0.08, right=0.99, top=0.95, bottom=0.18)
+        self.canvas_backtest.draw_idle()
+        diferenca = resultado["final_strategy_brl"] - resultado["final_buy_hold_brl"]
+        self.lbl_backtest_status.configure(
+            text=(
+                f"{periodo}: estratégia R$ {formatar_reais(resultado['final_strategy_brl'])} "
+                f"({resultado['strategy_return_pct']:+.2f}%) · "
+                f"buy-and-hold R$ {formatar_reais(resultado['final_buy_hold_brl'])} "
+                f"({resultado['buy_hold_return_pct']:+.2f}%) · "
+                f"diferença R$ {formatar_reais(diferenca, sinal=True)} · "
+                f"{resultado['trade_count']} operações. "
+                "Capital simulado 50% BTC/50% caixa; resultado passado não prevê retorno."
+            ),
+            text_color=CORES["texto_secundario"],
+        )
+
+    def _mostrar_notificacao_trade(self, trade: dict):
+        if not hasattr(self, "lbl_toast"):
+            self.lbl_toast = ctk.CTkLabel(
+                self,
+                text="",
+                fg_color=CORES["bg_destaque"],
+                text_color=CORES["verde_pastel"],
+                corner_radius=8,
+                font=FONTE_LABEL,
+            )
+        tipo = str(trade.get("tipo", "trade")).upper()
+        valor = float(trade.get("valor_brl", 0) or 0)
+        motivo = str(trade.get("motivo", "")).replace("_", " ")
+        self.lbl_toast.configure(
+            text=f"  🔔 {tipo} automática · {motivo} · R$ {formatar_reais(valor)}  "
+        )
+        self.lbl_toast.place(relx=0.98, rely=0.02, anchor="ne")
+        self.bell()
+        if self._toast_after_id is not None:
+            self.after_cancel(self._toast_after_id)
+        self._toast_after_id = self.after(7000, self.lbl_toast.place_forget)
 
     @staticmethod
     def _ler_numero(texto: str) -> float:
@@ -711,6 +1094,8 @@ class AppBTC(ctk.CTk):
             estado = self.motor.estado
             historico = list(self.motor.historico)
             fluxo_caixa = list(self.motor.fluxo_caixa)
+            equity_history = list(self.motor.equity_history)
+            erro_patrimonio = self.motor.erro_patrimonio
             preco = self.motor.preco_atual
             ultimo_update = self.motor.ultimo_update
             fonte_preco = self.motor.fonte_preco
@@ -726,8 +1111,13 @@ class AppBTC(ctk.CTk):
 
         if preco and estado:
             self._atualizar_tela(
-                estado, historico, preco, fonte_preco, fluxo_caixa
+                estado, historico, preco, fonte_preco, fluxo_caixa, equity_history
             )
+            novas_operacoes = historico[self._notified_trade_count:]
+            for trade in novas_operacoes:
+                if trade.get("motivo") not in ("manual", "aporte"):
+                    self._mostrar_notificacao_trade(trade)
+            self._notified_trade_count = len(historico)
             ts = (
                 self._para_horario_local(ultimo_update).strftime("%d/%m %H:%M:%S")
                 if ultimo_update else "—"
@@ -737,6 +1127,9 @@ class AppBTC(ctk.CTk):
                 cor_status = CORES["verde_matrix"]
             else:
                 status = f"⚠ Cotação em cache de {ts} (Carambeí)  |  Operações bloqueadas"
+                cor_status = CORES["amarelo_pastel"]
+            if erro_patrimonio:
+                status += f"  |  Erro ao salvar curva: {erro_patrimonio}"
                 cor_status = CORES["amarelo_pastel"]
             self.lbl_status.configure(text=status, text_color=cor_status)
         else:
@@ -766,6 +1159,15 @@ class AppBTC(ctk.CTk):
                 erro_analise,
             )
             self._ultimo_grafico_renderizado = chave_graficos
+
+        chave_patrimonio = (
+            len(equity_history),
+            equity_history[-1].get("timestamp") if equity_history else None,
+            equity_history[-1].get("equity") if equity_history else None,
+        )
+        if chave_patrimonio != self._ultimo_patrimonio_renderizado:
+            self._atualizar_grafico_patrimonio(equity_history, historico)
+            self._ultimo_patrimonio_renderizado = chave_patrimonio
 
         self._after_id = self.after(2000, self.atualizar_gui)
 
@@ -949,7 +1351,9 @@ class AppBTC(ctk.CTk):
                 self.botoes_fontes_analistas.append(button)
                 self.widgets_fontes_analistas.append(button)
 
-    def _atualizar_tela(self, estado, historico, preco, fonte_preco, fluxo_caixa):
+    def _atualizar_tela(
+        self, estado, historico, preco, fonte_preco, fluxo_caixa, equity_history
+    ):
         capital_brl = estado.capital_brl
         capital_btc = estado.capital_btc
         preco_medio = estado.preco_medio_brl
@@ -1025,8 +1429,105 @@ class AppBTC(ctk.CTk):
             text=f"{lucro_pct:+.2f}%",
             text_color=CORES["lucro"] if lucro_pct >= 0 else CORES["prejuizo"]
         )
+        metricas = calcular_metricas_risco(historico, equity_history)
+        drawdown = metricas["max_drawdown_pct"]
+        sharpe = metricas["sharpe_ratio"]
+        win_rate = metricas["win_rate_pct"]
+        profit_factor = metricas["profit_factor"]
+        holding_hours = metricas["average_holding_hours"]
+        exposure = metricas["average_exposure_pct"]
+        self.metricas_labels["drawdown"].configure(
+            text=f"{drawdown:.2f}%" if drawdown is not None else "—"
+        )
+        self.metricas_labels["sharpe"].configure(
+            text=f"{sharpe:.2f}" if sharpe is not None else "—"
+        )
+        self.metricas_labels["win_rate"].configure(
+            text=f"{win_rate:.1f}%" if win_rate is not None else "—"
+        )
+        self.metricas_labels["profit_factor"].configure(
+            text=(
+                "∞" if profit_factor == float("inf")
+                else f"{profit_factor:.2f}" if profit_factor is not None else "—"
+            )
+        )
+        self.metricas_labels["holding_time"].configure(
+            text=(
+                f"{holding_hours / 24:.1f} dias"
+                if holding_hours is not None else "—"
+            )
+        )
+        self.metricas_labels["exposure"].configure(
+            text=f"{exposure:.1f}%" if exposure is not None else "—"
+        )
 
         self._atualizar_trades(historico)
+
+    def _atualizar_grafico_patrimonio(self, equity_history, historico):
+        eixo = self.ax_patrimonio
+        eixo.clear()
+        eixo.set_facecolor(CORES["bg_secundario"])
+        eixo.tick_params(colors=CORES["texto_secundario"], labelsize=8)
+        eixo.grid(True, alpha=0.16, color=CORES["verde_matrix"])
+        for spine in eixo.spines.values():
+            spine.set_color(CORES["verde_escuro"])
+
+        if not equity_history:
+            eixo.text(
+                0.5, 0.5, "Curva começa a ser registrada a partir da primeira cotação.",
+                ha="center", va="center", color=CORES["texto_apagado"],
+                transform=eixo.transAxes,
+            )
+        else:
+            timestamps = [
+                self._para_horario_local(point["timestamp"])
+                for point in equity_history
+            ]
+            values = [float(point["equity"]) for point in equity_history]
+            benchmark = [float(point["benchmark"]) for point in equity_history]
+            eixo.plot(
+                timestamps, values, color=CORES["verde_matrix"],
+                linewidth=1.8, label="Estratégia",
+            )
+            eixo.plot(
+                timestamps, benchmark, color=CORES["azul_pastel"],
+                linestyle="--", linewidth=1.4, label="Buy-and-hold BTC",
+            )
+            for trade in historico:
+                try:
+                    trade_time = self._para_horario_local(trade["timestamp"])
+                    index = min(
+                        range(len(timestamps)),
+                        key=lambda idx: abs((timestamps[idx] - trade_time).total_seconds()),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if abs((timestamps[index] - trade_time).total_seconds()) > 3600:
+                    continue
+                is_buy = str(trade.get("tipo", "")).upper() == "COMPRA"
+                eixo.scatter(
+                    [timestamps[index]], [values[index]],
+                    marker="^" if is_buy else "v",
+                    color=CORES["verde_matrix"] if is_buy else CORES["prejuizo"],
+                    s=32, zorder=4,
+                )
+            eixo.xaxis.set_major_formatter(
+                mdates.DateFormatter("%d/%m %Hh", tz=FUSO_LOCAL)
+            )
+            eixo.xaxis.set_major_locator(
+                mdates.AutoDateLocator(minticks=4, maxticks=8, tz=FUSO_LOCAL)
+            )
+            eixo.yaxis.set_major_formatter(
+                FuncFormatter(lambda value, pos: f"R$ {value / 1000:.0f} mil")
+            )
+            eixo.legend(
+                loc="upper left", fontsize=8, frameon=False,
+                labelcolor=CORES["texto_secundario"],
+            )
+            self.fig_patrimonio.subplots_adjust(
+                left=0.08, right=0.99, top=0.95, bottom=0.18
+            )
+        self.canvas_patrimonio.draw_idle()
 
     def _atualizar_trades(self, historico):
         self.txt_trades.configure(state="normal")

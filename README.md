@@ -20,6 +20,25 @@ movimentações manuais de saldo, separadas do histórico de trades.
   reabilita as regras de saída.
 - **Vendas automáticas parciais:** não liquidam toda a posição de uma vez.
   Uma venda manual pode liquidar a quantidade informada, inclusive todo o BTC.
+- **Backtest histórico:** selecione 7, 30, 90 dias ou 1 ano. A simulação começa
+  com metade do patrimônio em BTC e metade em caixa e compara a estratégia com
+  buy-and-hold, incluindo a taxa de operação configurada. Resultados passados
+  não prevêem resultados futuros; a disponibilidade depende da CoinGecko.
+- **Patrimônio e benchmark:** a curva é registrada a partir da instalação desta
+  versão em `equity_history.json`, com ajustes para depósitos e saques. O
+  benchmark buy-and-hold acompanha os mesmos fluxos, comprando/vendendo BTC na
+  cotação registrada. Dados anteriores não são reconstruídos.
+- **Métricas de risco:** drawdown e Sharpe são calculados sobre a série de
+  patrimônio registrada; win rate, profit factor e tempo em posição usam trades
+  fechados e lotes FIFO; exposição média é ponderada pela duração entre amostras.
+  O Sharpe anualizado só fica disponível com observações em pelo menos três dias
+  (dois retornos diários). Vendas sem compra correspondente no histórico não têm
+  P&L FIFO calculável.
+- **Exportação:** use “Exportar CSV” para salvar o histórico completo, incluindo
+  P&L realizado por venda em FIFO e taxas. O arquivo usa separador ponto-e-vírgula
+  para abrir melhor em planilhas configuradas para português.
+- **Notificações:** trades automáticos geram um aviso visual temporário e um
+  sinal sonoro na interface.
 - **Operação manual:** informe um valor em reais para comprar ou uma quantidade
   de BTC para vender. As ordens são simuladas e incluem a taxa configurada.
 - **Fluxo de caixa:** registre depósitos e saques manualmente. Eles alteram o
