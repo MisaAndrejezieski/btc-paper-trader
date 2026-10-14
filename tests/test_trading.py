@@ -8,7 +8,7 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from io import StringIO
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fetcher import Cotacao, buscar_cotacao_btc_brl
 from main import (
@@ -347,6 +347,27 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(local.strftime("%H:%M"), "05:00")
         self.assertEqual(formatar_reais(1234.5), "1.234,50")
         self.assertEqual(formatar_reais(-12.5, sinal=True), "-12,50")
+
+    def test_news_link_uses_wrapping_label_and_opens_url_on_click(self):
+        app = AppBTC.__new__(AppBTC)
+        app.conteudo = Mock()
+        app.conteudo.winfo_width.return_value = 800
+        label = Mock()
+
+        with (
+            patch("main.ctk.CTkLabel", return_value=label) as create_label,
+            patch("main.webbrowser.open") as open_url,
+        ):
+            result = app._criar_link_noticia(
+                Mock(), "Notícia de exemplo", "https://example.com/article", 0
+            )
+            click_handler = label.bind.call_args.args[1]
+            click_handler(None)
+
+        self.assertIs(result, label)
+        self.assertEqual(create_label.call_args.kwargs["wraplength"], 690)
+        self.assertEqual(create_label.call_args.kwargs["cursor"], "hand2")
+        open_url.assert_called_once_with("https://example.com/article")
 
     def test_terminal_buy_and_hold_needs_an_initial_price(self):
         output = StringIO()

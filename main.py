@@ -12,7 +12,6 @@ import threading
 import time
 from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
-from functools import partial
 from math import isfinite
 from zoneinfo import ZoneInfo
 from tkinter import TclError, filedialog, messagebox
