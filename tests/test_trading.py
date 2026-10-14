@@ -74,14 +74,25 @@ class SimulatorTests(unittest.TestCase):
         motor.historico = []
         motor.fluxo_caixa = []
         motor.lock = threading.Lock()
-        motor._salvar_estado = lambda: None
-        motor._salvar_fluxo_caixa = lambda: None
+        motor.erro_persistencia = ""
 
-        motor.depositar_manual(250)
-        motor.sacar_manual(100)
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "transaction.json"),
+                "cash_flow_file": os.path.join(directory, "cash_flow.json"),
+            }
+            with patch.dict("config.CONFIG", files):
+                motor.depositar_manual(250)
+                motor.sacar_manual(100)
 
-        self.assertEqual([item["tipo"] for item in motor.fluxo_caixa], ["DEPOSITO", "SAQUE"])
-        self.assertEqual(motor.historico, [])
+            self.assertEqual(
+                [item["tipo"] for item in motor.fluxo_caixa],
+                ["DEPOSITO", "SAQUE"],
+            )
+            self.assertEqual(motor.historico, [])
+            self.assertFalse(os.path.exists(files["trade_journal_file"]))
 
     def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
         for operacao in (registrar_deposito, registrar_saque):
@@ -95,6 +106,43 @@ class SimulatorTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "excede"):
             registrar_saque(self.estado, 1000.01)
         self.assertEqual(self.estado.capital_brl, 1000)
+
+    def test_cash_flow_transaction_is_recovered_after_a_partial_save(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = self.estado
+        motor.historico = []
+        motor.fluxo_caixa = []
+        motor.lock = threading.Lock()
+        motor.erro_persistencia = ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "transaction.json"),
+                "cash_flow_file": os.path.join(directory, "cash_flow.json"),
+            }
+            with patch.dict("config.CONFIG", files):
+                with patch.object(
+                    motor, "_salvar_fluxo_caixa",
+                    side_effect=OSError("disco cheio"),
+                ):
+                    with self.assertRaisesRegex(OSError, "Fluxo de caixa pendente"):
+                        motor.depositar_manual(250)
+
+                self.assertEqual(motor.estado.capital_brl, 1250)
+                self.assertTrue(os.path.exists(files["trade_journal_file"]))
+
+                recuperador = MotorSimulador.__new__(MotorSimulador)
+                recuperador._recuperar_transacao_trade()
+
+                with open(files["state_file"], encoding="utf-8") as file:
+                    state = json.load(file)
+                with open(files["cash_flow_file"], encoding="utf-8") as file:
+                    cash_flow = json.load(file)
+                self.assertEqual(state["capital_brl"], 1250)
+                self.assertEqual(cash_flow[0]["tipo"], "DEPOSITO")
+                self.assertFalse(os.path.exists(files["trade_journal_file"]))
 
     def test_old_saved_state_uses_defaults_for_new_strategy_fields(self):
         estado = Estado.from_dict({"capital_brl": 1000, "capital_btc": 0.01})
@@ -173,6 +221,7 @@ class SimulatorTests(unittest.TestCase):
         motor.historico = []
         motor.preco_atual = 200_000
         motor.preco_atualizado = True
+        motor.ultimo_update = datetime.now(timezone.utc)
         motor.lock = threading.Lock()
         motor.erro_persistencia = ""
         motor.equity_history = []
@@ -210,6 +259,7 @@ class SimulatorTests(unittest.TestCase):
         motor.historico = []
         motor.preco_atual = 200_000
         motor.preco_atualizado = True
+        motor.ultimo_update = datetime.now(timezone.utc)
         motor.lock = threading.Lock()
         motor.erro_persistencia = ""
         motor.equity_history = []
@@ -344,11 +394,52 @@ class SimulatorTests(unittest.TestCase):
         self.assertFalse(quote.atual)
         self.assertEqual(quote.preco_brl, 400_000)
 
+    def test_manual_trade_rejects_a_quote_past_its_freshness_limit(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.preco_atual = 200_000
+        motor.preco_atualizado = True
+        motor.ultimo_update = datetime.now(timezone.utc) - timedelta(minutes=11)
+
+        with self.assertRaisesRegex(RuntimeError, "desatualizada"):
+            motor._validar_cotacao_para_operacao()
+        self.assertFalse(motor.preco_atualizado)
+
+    def test_market_fetch_failure_invalidates_the_previous_quote(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.rodando = True
+        motor.lock = threading.Lock()
+        motor.ultimo_erro = ""
+        motor.preco_atualizado = True
+
+        with (
+            patch("main.buscar_cotacao_btc_brl", side_effect=RuntimeError("offline")),
+            patch(
+                "main.time.sleep",
+                side_effect=lambda _: setattr(motor, "rodando", False),
+            ),
+        ):
+            motor._loop()
+
+        self.assertFalse(motor.preco_atualizado)
+        self.assertEqual(motor.ultimo_erro, "offline")
+
     def test_local_time_and_brazilian_currency_format(self):
         local = AppBTC._para_horario_local("2026-10-13T08:00:00+00:00")
         self.assertEqual(local.strftime("%H:%M"), "05:00")
         self.assertEqual(formatar_reais(1234.5), "1.234,50")
         self.assertEqual(formatar_reais(-12.5, sinal=True), "-12,50")
+
+    def test_amount_parser_distinguishes_brazilian_currency_and_btc(self):
+        self.assertEqual(AppBTC._ler_numero("100.000", "brl"), 100_000)
+        self.assertEqual(AppBTC._ler_numero("100.000,00", "brl"), 100_000)
+        self.assertEqual(AppBTC._ler_numero("1.234,56", "brl"), 1234.56)
+        self.assertEqual(AppBTC._ler_numero("100.50", "brl"), 100.5)
+        self.assertEqual(AppBTC._ler_numero("0.0001", "btc"), 0.0001)
+        self.assertEqual(AppBTC._ler_numero("0,0001", "btc"), 0.0001)
+        with self.assertRaisesRegex(ValueError, "reais"):
+            AppBTC._ler_numero("1.00.000", "brl")
+        with self.assertRaisesRegex(ValueError, "BTC"):
+            AppBTC._ler_numero("1.000,000", "btc")
 
     def test_news_link_uses_wrapping_label_and_opens_url_on_click(self):
         app = AppBTC.__new__(AppBTC)

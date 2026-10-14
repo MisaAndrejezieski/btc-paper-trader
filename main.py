@@ -7,6 +7,7 @@ Tudo em um único processo: `python main.py`
 import json
 import os
 import queue
+import re
 import tempfile
 import threading
 import time
@@ -235,11 +236,21 @@ class MotorSimulador:
                 not isinstance(trade, dict) for trade in history
             ):
                 raise ValueError("O diário de recuperação contém dados inválidos.")
+            cash_flow = transaction.get("cash_flow")
+            if cash_flow is not None and (
+                not isinstance(cash_flow, list)
+                or any(not isinstance(evento, dict) for evento in cash_flow)
+            ):
+                raise ValueError("O fluxo de caixa do diário contém dados inválidos.")
             Estado.from_dict(state)
             self._salvar_json_atomico(CONFIG["state_file"], state)
             self._salvar_json_atomico(
                 CONFIG["history_file"], history, ensure_ascii=False
             )
+            if cash_flow is not None:
+                self._salvar_json_atomico(
+                    CONFIG["cash_flow_file"], cash_flow, ensure_ascii=False
+                )
             os.remove(path)
         except (
             KeyError, json.JSONDecodeError, OSError, TypeError, UnicodeError, ValueError
@@ -288,6 +299,36 @@ class MotorSimulador:
             self.erro_persistencia = (
                 f"Trade pendente de gravação; os dados serão recuperados ao "
                 f"reiniciar o simulador ({path}): {exc}"
+            )
+            raise OSError(self.erro_persistencia) from exc
+
+    def _persistir_fluxo_caixa(
+        self,
+        estado_anterior: Estado,
+        fluxo_caixa_anterior: list,
+    ):
+        path = CONFIG["trade_journal_file"]
+        transaction = {
+            "state": self.estado.to_dict(),
+            "history": self.historico,
+            "cash_flow": self.fluxo_caixa,
+        }
+        try:
+            self._salvar_json_atomico(path, transaction, ensure_ascii=False)
+        except (OSError, TypeError, ValueError):
+            self.estado = estado_anterior
+            self.fluxo_caixa = fluxo_caixa_anterior
+            raise
+
+        try:
+            self._salvar_estado()
+            self._salvar_historico()
+            self._salvar_fluxo_caixa()
+            os.remove(path)
+        except (OSError, TypeError, ValueError) as exc:
+            self.erro_persistencia = (
+                f"Fluxo de caixa pendente de gravação; os dados serão "
+                f"recuperados ao reiniciar o simulador ({path}): {exc}"
             )
             raise OSError(self.erro_persistencia) from exc
 
@@ -366,8 +407,21 @@ class MotorSimulador:
         self.historico.append(trade.to_dict())
 
     def _validar_cotacao_para_operacao(self) -> float:
-        if not self.preco_atualizado or self.preco_atual is None:
+        atualizado_em = getattr(self, "ultimo_update", None)
+        if (
+            not self.preco_atualizado
+            or self.preco_atual is None
+            or not isinstance(atualizado_em, datetime)
+        ):
             raise RuntimeError("A cotação não está atualizada; aguarde uma fonte online.")
+        if atualizado_em.tzinfo is None:
+            atualizado_em = atualizado_em.replace(tzinfo=timezone.utc)
+        idade = (datetime.now(timezone.utc) - atualizado_em.astimezone(timezone.utc)).total_seconds()
+        if idade < 0 or idade > CONFIG["cotacao_max_age_segundos"]:
+            self.preco_atualizado = False
+            raise RuntimeError(
+                "A cotação está desatualizada; aguarde uma nova cotação online."
+            )
         return self.preco_atual
 
     def comprar_manual(self, valor_brl: float):
@@ -407,10 +461,11 @@ class MotorSimulador:
     def depositar_manual(self, valor_brl: float):
         with self.lock:
             self._validar_persistencia()
+            estado_anterior = Estado.from_dict(self.estado.to_dict())
+            fluxo_caixa_anterior = list(self.fluxo_caixa)
             evento = registrar_deposito(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
-            self._salvar_estado()
-            self._salvar_fluxo_caixa()
+            self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
             self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) + valor_brl
             if getattr(self, "preco_atual", None) is not None:
                 self._registrar_patrimonio(
@@ -421,10 +476,11 @@ class MotorSimulador:
     def sacar_manual(self, valor_brl: float):
         with self.lock:
             self._validar_persistencia()
+            estado_anterior = Estado.from_dict(self.estado.to_dict())
+            fluxo_caixa_anterior = list(self.fluxo_caixa)
             evento = registrar_saque(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
-            self._salvar_estado()
-            self._salvar_fluxo_caixa()
+            self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
             self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) - valor_brl
             if getattr(self, "preco_atual", None) is not None:
                 self._registrar_patrimonio(
@@ -553,6 +609,7 @@ class MotorSimulador:
                 print(f"[ERRO no motor] {e}")
                 with self.lock:
                     self.ultimo_erro = str(e)
+                    self.preco_atualizado = False
 
             for _ in range(int(CONFIG["intervalo_loop_minutos"] * 60)):
                 if not self.rodando:
@@ -1299,18 +1356,66 @@ class AppBTC(ctk.CTk):
         return label
 
     @staticmethod
-    def _ler_numero(texto: str) -> float:
+    def _ler_numero(texto: str, tipo: str = "brl") -> float:
         texto = texto.strip().replace("R$", "").replace(" ", "")
-        if "," in texto:
-            texto = texto.replace(".", "").replace(",", ".")
-        valor = float(texto)
+        if not texto or tipo not in ("brl", "btc"):
+            raise ValueError("Informe um número válido.")
+
+        sinal = ""
+        if texto[0] in "+-":
+            sinal, texto = texto[0], texto[1:]
+        if not texto:
+            raise ValueError("Informe um número válido.")
+
+        if tipo == "brl":
+            if texto.count(",") > 1:
+                raise ValueError("Informe um valor em reais válido.")
+            if "," in texto:
+                inteiro, centavos = texto.split(",", 1)
+                if len(centavos) not in (1, 2):
+                    raise ValueError("Informe no máximo duas casas decimais em reais.")
+                if "." in inteiro and not re.fullmatch(
+                    r"\d{1,3}(?:\.\d{3})+", inteiro
+                ):
+                    raise ValueError("Separadores de milhar inválidos.")
+                if "." not in inteiro and inteiro and not inteiro.isdigit():
+                    raise ValueError("Informe um valor em reais válido.")
+                inteiro = inteiro.replace(".", "") or "0"
+                texto = f"{inteiro}.{centavos}"
+            elif "." in texto:
+                if re.fullmatch(r"\d{1,3}(?:\.\d{3})+", texto):
+                    texto = texto.replace(".", "")
+                elif (
+                    texto.count(".") == 1
+                    and len(texto.rsplit(".", 1)[1]) in (1, 2)
+                    and all(parte.isdigit() for parte in texto.split("."))
+                ):
+                    pass
+                else:
+                    raise ValueError("Informe um valor em reais válido.")
+            elif not texto.isdigit():
+                raise ValueError("Informe um valor em reais válido.")
+        else:
+            if "," in texto and "." in texto:
+                raise ValueError("Use apenas um separador decimal para BTC.")
+            if texto.count(",") > 1 or texto.count(".") > 1:
+                raise ValueError("Informe uma quantidade de BTC válida.")
+            texto = texto.replace(",", ".")
+            if texto.startswith("."):
+                texto = "0" + texto
+            if texto.endswith(".") or not all(
+                parte.isdigit() for parte in texto.split(".")
+            ):
+                raise ValueError("Informe uma quantidade de BTC válida.")
+
+        valor = float(sinal + texto)
         if not isfinite(valor):
             raise ValueError("Informe um número válido.")
         return valor
 
     def _comprar_manual(self):
         try:
-            valor = self._ler_numero(self.entrada_compra.get())
+            valor = self._ler_numero(self.entrada_compra.get(), "brl")
             trade = self.motor.comprar_manual(valor)
             self.entrada_compra.delete(0, "end")
             messagebox.showinfo(
@@ -1324,7 +1429,7 @@ class AppBTC(ctk.CTk):
 
     def _vender_manual(self):
         try:
-            quantidade = self._ler_numero(self.entrada_venda.get())
+            quantidade = self._ler_numero(self.entrada_venda.get(), "btc")
             trade = self.motor.vender_manual(quantidade)
             self.entrada_venda.delete(0, "end")
             messagebox.showinfo(
@@ -1338,7 +1443,7 @@ class AppBTC(ctk.CTk):
 
     def _depositar_manual(self):
         try:
-            valor = self._ler_numero(self.entrada_deposito.get())
+            valor = self._ler_numero(self.entrada_deposito.get(), "brl")
             evento = self.motor.depositar_manual(valor)
             self.entrada_deposito.delete(0, "end")
             messagebox.showinfo(
@@ -1346,12 +1451,12 @@ class AppBTC(ctk.CTk):
                 f"Depósito de R$ {formatar_reais(evento.valor_brl)} registrado.",
                 parent=self,
             )
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, RuntimeError) as e:
             messagebox.showerror("Não foi possível depositar", str(e), parent=self)
 
     def _sacar_manual(self):
         try:
-            valor = self._ler_numero(self.entrada_saque.get())
+            valor = self._ler_numero(self.entrada_saque.get(), "brl")
             evento = self.motor.sacar_manual(valor)
             self.entrada_saque.delete(0, "end")
             messagebox.showinfo(
@@ -1359,7 +1464,7 @@ class AppBTC(ctk.CTk):
                 f"Saque de R$ {formatar_reais(evento.valor_brl)} registrado.",
                 parent=self,
             )
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, RuntimeError) as e:
             messagebox.showerror("Não foi possível sacar", str(e), parent=self)
 
     @staticmethod
@@ -1427,7 +1532,10 @@ class AppBTC(ctk.CTk):
                 status = f"● Cotação atualizada: {ts} (Carambeí)  |  Fonte: {fonte_preco}"
                 cor_status = CORES["verde_matrix"]
             else:
-                status = f"⚠ Cotação em cache de {ts} (Carambeí)  |  Operações bloqueadas"
+                status = (
+                    f"⚠ Cotação indisponível/desatualizada (última: {ts}, "
+                    f"{fonte_preco})  |  Operações bloqueadas"
+                )
                 cor_status = CORES["amarelo_pastel"]
             if erro_patrimonio:
                 status += f"  |  Erro ao salvar curva: {erro_patrimonio}"

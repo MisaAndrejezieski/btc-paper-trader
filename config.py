@@ -34,6 +34,7 @@ CONFIG = {
 
     # --- Custos ---
     "taxa_operacao_pct": 0.1,
+    "cotacao_max_age_segundos": 600,
 
     # --- Arquivos ---
     "state_file": os.path.join(DATA_DIR, "state.json"),
