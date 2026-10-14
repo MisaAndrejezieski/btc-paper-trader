@@ -8,18 +8,18 @@ CONFIG = {
     "capital_inicial_brl": 0.00,
 
     # --- Valor base de compra extra ---
-    "valor_compra_base_brl": 150.00,
+    "valor_compra_base_brl": 1000.00,
 
     # --- Compra extra em queda forte ---
-    "queda_para_compra_extra_pct": 5.0,
-    "multiplicador_compra_extra": 2.0,
+    "queda_para_compra_extra_pct": 2.0,
+    "multiplicador_compra_extra": 5.0,
 
     # --- Take-profit parcial ---
-    "take_profit_pct": 8.0,
-    "percentual_venda_take_profit": 30,
+    "take_profit_pct": 3.0,
+    "percentual_venda_take_profit": 50,
 
     # --- Stop-loss de proteção ---
-    "stop_loss_pct": 25.0,
+    "stop_loss_pct": 10.0,
     "percentual_venda_stop_loss": 50,
     "stop_loss_ativo": True,
 

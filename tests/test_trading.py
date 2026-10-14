@@ -105,6 +105,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(decidir_acao(self.estado, 200_000), {"acao": "NADA"})
 
     def test_extra_buy_uses_price_of_last_purchase_not_average(self):
+        self.estado.capital_brl = 10_000
         self.estado.capital_btc = 0.01
         self.estado.preco_medio_brl = 290_000
         self.estado.ultimo_preco_compra_brl = 300_000
@@ -113,28 +114,52 @@ class SimulatorTests(unittest.TestCase):
         acao = decidir_acao(self.estado, 280_000)
 
         self.assertEqual(acao["acao"], "COMPRA")
+        self.assertEqual(acao["valor_brl"], 5_000)
         self.assertEqual(acao["motivo"], "compra_extra")
+
+    def test_extra_buy_waits_for_sufficient_cash(self):
+        self.estado.capital_brl = 4_999
+        self.estado.ultimo_preco_compra_brl = 300_000
+        self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
+
+        self.assertEqual(decidir_acao(self.estado, 280_000), {"acao": "NADA"})
+
+    def test_extra_buy_triggers_at_two_percent_drop(self):
+        self.estado.capital_brl = 10_000
+        self.estado.ultimo_preco_compra_brl = 300_000
+        self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
+
+        self.assertEqual(decidir_acao(self.estado, 293_999)["valor_brl"], 5_000)
+
+    def test_extra_buy_does_not_trigger_before_two_percent_drop(self):
+        self.estado.capital_brl = 10_000
+        self.estado.ultimo_preco_compra_brl = 300_000
+        self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
+
+        self.assertEqual(decidir_acao(self.estado, 294_001), {"acao": "NADA"})
 
     def test_take_profit_only_sells_once_until_next_buy(self):
         executar_compra(self.estado, 200_000, 500, "manual")
-        acao = decidir_acao(self.estado, 216_000)
+        acao = decidir_acao(self.estado, 206_000)
         self.assertEqual(acao["motivo"], "take_profit")
-        executar_venda(self.estado, 216_000, acao["percentual"], acao["motivo"])
+        self.assertEqual(acao["percentual"], 50)
+        executar_venda(self.estado, 206_000, acao["percentual"], acao["motivo"])
 
-        self.assertEqual(decidir_acao(self.estado, 216_000), {"acao": "NADA"})
+        self.assertEqual(decidir_acao(self.estado, 206_000), {"acao": "NADA"})
 
-        executar_compra(self.estado, 216_000, 100, "manual")
+        executar_compra(self.estado, 206_000, 100, "manual")
         self.assertFalse(self.estado.take_profit_executado)
 
     def test_stop_loss_only_sells_once_and_does_not_rebuy_while_falling(self):
         executar_compra(self.estado, 200_000, 500, "manual")
-        acao = decidir_acao(self.estado, 150_000)
+        acao = decidir_acao(self.estado, 180_000)
         self.assertEqual(acao["motivo"], "stop_loss")
-        executar_venda(self.estado, 150_000, acao["percentual"], acao["motivo"])
+        self.assertEqual(acao["percentual"], 50)
+        executar_venda(self.estado, 180_000, acao["percentual"], acao["motivo"])
 
-        self.assertEqual(decidir_acao(self.estado, 150_000), {"acao": "NADA"})
+        self.assertEqual(decidir_acao(self.estado, 180_000), {"acao": "NADA"})
 
-        executar_compra(self.estado, 150_000, 100, "manual")
+        executar_compra(self.estado, 180_000, 100, "manual")
         self.assertFalse(self.estado.stop_loss_executado)
 
     def test_manual_order_requires_live_quote_and_persists_trade(self):

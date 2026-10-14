@@ -8,13 +8,14 @@ movimentações manuais de saldo, separadas do histórico de trades.
 
 ## Estratégia
 
-- **Compra extra:** compra o dobro do valor-base configurado se o preço cair
-  5% desde a última compra; usa o preço médio como referência em estados antigos.
+- **Compra extra:** compra R$ 5.000 (valor-base de R$ 1.000 vezes o multiplicador
+  5) se o preço cair 2% desde a última compra; usa o preço médio como referência
+  em estados antigos. Só executa se houver saldo suficiente em reais.
 - **Primeira compra:** feita manualmente por você. Depois, compras extras e
   vendas automáticas usam apenas o saldo e os BTC já existentes no simulador.
-- **Take-profit:** vende 30% uma vez se o preço subir 8% sobre o preço médio;
+- **Take-profit:** vende 50% uma vez se o preço subir 3% sobre o preço médio;
   pode voltar a disparar depois de uma nova compra.
-- **Stop-loss:** vende 50% uma vez se o preço cair 25% sobre o preço médio;
+- **Stop-loss:** vende 50% uma vez se o preço cair 10% sobre o preço médio;
   enquanto a queda persistir, não recompra automaticamente. Uma nova compra
   reabilita as regras de saída.
 - **Vendas automáticas parciais:** não liquidam toda a posição de uma vez.
