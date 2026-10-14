@@ -1,4 +1,7 @@
+import json
 import math
+import os
+import tempfile
 import threading
 import unittest
 from contextlib import redirect_stdout
@@ -169,17 +172,161 @@ class SimulatorTests(unittest.TestCase):
         motor.preco_atual = 200_000
         motor.preco_atualizado = True
         motor.lock = threading.Lock()
-        motor._salvar_estado = lambda: None
-        motor._salvar_historico = lambda: None
+        motor.erro_persistencia = ""
+        motor.equity_history = []
+        motor.erro_patrimonio = ""
+        motor._pending_equity_flow = 0.0
 
-        trade = motor.comprar_manual(100)
-        self.assertEqual(trade.motivo, "manual")
-        self.assertEqual(len(motor.historico), 1)
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "trade.json"),
+                "equity_file": os.path.join(directory, "equity.json"),
+            }
+            with patch.dict("config.CONFIG", files):
+                trade = motor.comprar_manual(100)
 
+                self.assertEqual(trade.motivo, "manual")
+                self.assertEqual(len(motor.historico), 1)
+                with open(files["state_file"], encoding="utf-8") as f:
+                    state = json.load(f)
+                with open(files["history_file"], encoding="utf-8") as f:
+                    history = json.load(f)
+                self.assertEqual(state["total_compras"], 1)
+                self.assertEqual(history[0]["tipo"], "COMPRA")
+                self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
+                motor.preco_atualizado = False
+                with self.assertRaisesRegex(RuntimeError, "cotação não está atualizada"):
+                    motor.comprar_manual(100)
+                self.assertEqual(len(motor.historico), 1)
+
+    def test_incomplete_trade_save_is_recovered_before_loading(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = self.estado
+        motor.historico = []
+        motor.preco_atual = 200_000
+        motor.preco_atualizado = True
+        motor.lock = threading.Lock()
+        motor.erro_persistencia = ""
+        motor.equity_history = []
+        motor.erro_patrimonio = ""
+        motor._pending_equity_flow = 0.0
+
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "trade.json"),
+                "equity_file": os.path.join(directory, "equity.json"),
+            }
+            with patch.dict("config.CONFIG", files):
+                with patch.object(
+                    motor, "_salvar_historico", side_effect=OSError("disco cheio")
+                ):
+                    with self.assertRaisesRegex(OSError, "recuperados ao reiniciar"):
+                        motor.comprar_manual(100)
+
+                self.assertTrue(os.path.exists(files["trade_journal_file"]))
+                with self.assertRaisesRegex(RuntimeError, "Reinicie"):
+                    motor.comprar_manual(100)
+
+                recuperador = MotorSimulador.__new__(MotorSimulador)
+                recuperador._recuperar_transacao_trade()
+                with open(files["state_file"], encoding="utf-8") as f:
+                    state = json.load(f)
+                with open(files["history_file"], encoding="utf-8") as f:
+                    history = json.load(f)
+                self.assertEqual(state["total_compras"], 1)
+                self.assertEqual(len(history), 1)
+                self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
+    def test_automatic_purchase_is_written_to_state_and_history(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = Estado(
+            capital_brl=10_000,
+            capital_btc=0.01,
+            preco_medio_brl=300_000,
+            ultima_compra_ts=datetime.now(timezone.utc).isoformat(),
+            ultimo_preco_compra_brl=300_000,
+        )
+        motor.historico = []
+        motor.fluxo_caixa = []
+        motor.equity_history = []
+        motor._pending_equity_flow = 0.0
+        motor.erro_patrimonio = ""
+        motor.erro_persistencia = ""
+        motor.preco_atual = None
+        motor.fonte_preco = ""
         motor.preco_atualizado = False
-        with self.assertRaisesRegex(RuntimeError, "cotação não está atualizada"):
-            motor.comprar_manual(100)
-        self.assertEqual(len(motor.historico), 1)
+        motor.ultimo_update = None
+        motor.ultimo_erro = ""
+        motor.historico_cotacao = []
+        motor.previsao_dia = []
+        motor.sentimento_analistas = 0.0
+        motor.artigos_analistas = []
+        motor.atualizado_mercado = None
+        motor.atualizado_analistas = datetime.now(timezone.utc)
+        motor.erro_analise = ""
+        motor.rodando = True
+        motor.lock = threading.Lock()
+
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "trade.json"),
+                "equity_file": os.path.join(directory, "equity.json"),
+            }
+            quote = Cotacao(
+                293_000,
+                "Teste",
+                datetime.now(timezone.utc),
+                True,
+            )
+            with (
+                patch.dict("config.CONFIG", {**files, "intervalo_loop_minutos": 1}),
+                patch("main.buscar_cotacao_btc_brl", return_value=quote),
+                patch("main.buscar_historico_btc_brl", return_value=[]),
+                patch(
+                    "main.time.sleep",
+                    side_effect=lambda _: setattr(motor, "rodando", False),
+                ),
+            ):
+                motor._loop()
+
+            with open(files["state_file"], encoding="utf-8") as f:
+                state = json.load(f)
+            with open(files["history_file"], encoding="utf-8") as f:
+                history = json.load(f)
+            self.assertEqual(state["total_compras"], 1)
+            self.assertEqual(history[0]["motivo"], "compra_extra")
+            self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
+    def test_corrupt_trade_files_are_not_silently_replaced_by_empty_data(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        with tempfile.TemporaryDirectory() as directory:
+            state_path = os.path.join(directory, "state.json")
+            history_path = os.path.join(directory, "history.json")
+            with open(state_path, "w", encoding="utf-8") as f:
+                f.write("{invalid")
+            with open(history_path, "w", encoding="utf-8") as f:
+                f.write("{}")
+
+            with patch.dict(
+                "config.CONFIG",
+                {"state_file": state_path, "history_file": history_path},
+            ):
+                with self.assertRaisesRegex(ValueError, "state.json"):
+                    motor._carregar_estado()
+                with self.assertRaisesRegex(ValueError, "history.json"):
+                    motor._carregar_historico()
+
+            with open(state_path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "{invalid")
+            with open(history_path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "{}")
 
     def test_cached_quote_is_not_marked_as_current(self):
         cached = Cotacao(

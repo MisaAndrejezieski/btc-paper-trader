@@ -6,6 +6,7 @@ Tudo em um único processo: `python main.py`
 
 import json
 import os
+import tempfile
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -65,12 +66,14 @@ def formatar_reais(valor: float, sinal: bool = False) -> str:
 
 class MotorSimulador:
     def __init__(self):
+        self._recuperar_transacao_trade()
         self.estado = self._carregar_estado()
         self.historico = self._carregar_historico()
         self.fluxo_caixa = self._carregar_fluxo_caixa()
         self.equity_history = self._carregar_historico_patrimonio()
         self._pending_equity_flow = 0.0
         self.erro_patrimonio = ""
+        self.erro_persistencia = ""
         self.preco_atual = None
         self.fonte_preco = ""
         self.preco_atualizado = False
@@ -91,9 +94,17 @@ class MotorSimulador:
         if os.path.exists(CONFIG["state_file"]):
             try:
                 with open(CONFIG["state_file"], "r", encoding="utf-8") as f:
-                    return Estado.from_dict(json.load(f))
-            except (json.JSONDecodeError, OSError, TypeError):
-                pass
+                    data = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("O estado precisa ser um objeto JSON.")
+                return Estado.from_dict(data)
+            except (
+                json.JSONDecodeError, OSError, TypeError, UnicodeError, ValueError
+            ) as exc:
+                raise ValueError(
+                    f"Não foi possível carregar {CONFIG['state_file']}; "
+                    f"o arquivo foi preservado: {exc}"
+                ) from exc
         estado = Estado()
         estado.capital_brl = CONFIG["capital_inicial_brl"]
         estado.patrimonio_inicial_brl = CONFIG["capital_inicial_brl"]
@@ -103,19 +114,35 @@ class MotorSimulador:
         if os.path.exists(CONFIG["history_file"]):
             try:
                 with open(CONFIG["history_file"], "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
+                    data = json.load(f)
+                if not isinstance(data, list) or any(
+                    not isinstance(trade, dict) for trade in data
+                ):
+                    raise ValueError("O histórico precisa ser uma lista de trades.")
+                return data
+            except (json.JSONDecodeError, OSError, UnicodeError, ValueError) as exc:
+                raise ValueError(
+                    f"Não foi possível carregar {CONFIG['history_file']}; "
+                    f"o arquivo foi preservado: {exc}"
+                ) from exc
         return []
 
     def _carregar_fluxo_caixa(self):
         if not os.path.exists(CONFIG["cash_flow_file"]):
             return []
-        with open(CONFIG["cash_flow_file"], "r", encoding="utf-8") as f:
-            fluxo_caixa = json.load(f)
-        if not isinstance(fluxo_caixa, list):
-            raise ValueError("O arquivo de fluxo de caixa precisa conter uma lista.")
-        return fluxo_caixa
+        try:
+            with open(CONFIG["cash_flow_file"], "r", encoding="utf-8") as f:
+                fluxo_caixa = json.load(f)
+            if not isinstance(fluxo_caixa, list) or any(
+                not isinstance(evento, dict) for evento in fluxo_caixa
+            ):
+                raise ValueError("O fluxo de caixa precisa ser uma lista de eventos.")
+            return fluxo_caixa
+        except (json.JSONDecodeError, OSError, UnicodeError, ValueError) as exc:
+            raise ValueError(
+                f"Não foi possível carregar {CONFIG['cash_flow_file']}; "
+                f"o arquivo foi preservado: {exc}"
+            ) from exc
 
     def _carregar_historico_patrimonio(self):
         path = CONFIG["equity_file"]
@@ -124,28 +151,118 @@ class MotorSimulador:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError) as exc:
-            print(f"[AVISO] Não foi possível ler o histórico de patrimônio: {exc}")
-            return []
-        if not isinstance(data, list):
-            raise ValueError("O histórico de patrimônio precisa conter uma lista.")
+            if not isinstance(data, list) or any(
+                not isinstance(point, dict) for point in data
+            ):
+                raise ValueError("O histórico de patrimônio precisa ser uma lista.")
+        except (json.JSONDecodeError, OSError, UnicodeError, ValueError) as exc:
+            raise ValueError(
+                f"Não foi possível carregar {path}; o arquivo foi preservado: {exc}"
+            ) from exc
         return data
 
+    @staticmethod
+    def _salvar_json_atomico(path: str, data, ensure_ascii: bool = True):
+        directory = os.path.dirname(os.path.abspath(path))
+        os.makedirs(directory, exist_ok=True)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=directory,
+                prefix=f".{os.path.basename(path)}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temp_path = f.name
+                json.dump(data, f, indent=2, ensure_ascii=ensure_ascii)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, path)
+            temp_path = None
+        finally:
+            if temp_path is not None:
+                try:
+                    os.unlink(temp_path)
+                except FileNotFoundError:
+                    pass
+
+    def _recuperar_transacao_trade(self):
+        path = CONFIG["trade_journal_file"]
+        if not os.path.exists(path):
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                transaction = json.load(f)
+            state = transaction["state"]
+            history = transaction["history"]
+            if not isinstance(state, dict) or not isinstance(history, list) or any(
+                not isinstance(trade, dict) for trade in history
+            ):
+                raise ValueError("O diário de recuperação contém dados inválidos.")
+            Estado.from_dict(state)
+            self._salvar_json_atomico(CONFIG["state_file"], state)
+            self._salvar_json_atomico(
+                CONFIG["history_file"], history, ensure_ascii=False
+            )
+            os.remove(path)
+        except (
+            KeyError, json.JSONDecodeError, OSError, TypeError, UnicodeError, ValueError
+        ) as exc:
+            raise RuntimeError(
+                f"Não foi possível recuperar a transação pendente em {path}; "
+                f"os arquivos foram preservados: {exc}"
+            ) from exc
+
     def _salvar_estado(self):
-        with open(CONFIG["state_file"], "w", encoding="utf-8") as f:
-            json.dump(self.estado.to_dict(), f, indent=2)
+        self._salvar_json_atomico(CONFIG["state_file"], self.estado.to_dict())
 
     def _salvar_historico(self):
-        with open(CONFIG["history_file"], "w", encoding="utf-8") as f:
-            json.dump(self.historico, f, indent=2, ensure_ascii=False)
+        self._salvar_json_atomico(
+            CONFIG["history_file"], self.historico, ensure_ascii=False
+        )
 
     def _salvar_fluxo_caixa(self):
-        with open(CONFIG["cash_flow_file"], "w", encoding="utf-8") as f:
-            json.dump(self.fluxo_caixa, f, indent=2, ensure_ascii=False)
+        self._salvar_json_atomico(
+            CONFIG["cash_flow_file"], self.fluxo_caixa, ensure_ascii=False
+        )
 
     def _salvar_historico_patrimonio(self):
-        with open(CONFIG["equity_file"], "w", encoding="utf-8") as f:
-            json.dump(self.equity_history, f, indent=2, ensure_ascii=False)
+        self._salvar_json_atomico(
+            CONFIG["equity_file"], self.equity_history, ensure_ascii=False
+        )
+
+    def _persistir_trade(self, estado_anterior: Estado, historico_anterior: list):
+        path = CONFIG["trade_journal_file"]
+        transaction = {
+            "state": self.estado.to_dict(),
+            "history": self.historico,
+        }
+        try:
+            self._salvar_json_atomico(path, transaction, ensure_ascii=False)
+        except (OSError, TypeError, ValueError):
+            self.estado = estado_anterior
+            self.historico = historico_anterior
+            raise
+
+        try:
+            self._salvar_estado()
+            self._salvar_historico()
+            os.remove(path)
+        except (OSError, TypeError, ValueError) as exc:
+            self.erro_persistencia = (
+                f"Trade pendente de gravação; os dados serão recuperados ao "
+                f"reiniciar o simulador ({path}): {exc}"
+            )
+            raise OSError(self.erro_persistencia) from exc
+
+    def _validar_persistencia(self):
+        if getattr(self, "erro_persistencia", ""):
+            raise RuntimeError(
+                "Há uma transação pendente de gravação. Reinicie o simulador "
+                "para recuperar os arquivos antes de operar novamente."
+            )
 
     def _registrar_patrimonio(self, preco: float, timestamp, force: bool = False):
         if not hasattr(self, "equity_history") or not isfinite(preco) or preco <= 0:
@@ -221,15 +338,17 @@ class MotorSimulador:
 
     def comprar_manual(self, valor_brl: float):
         with self.lock:
+            self._validar_persistencia()
             preco = self._validar_cotacao_para_operacao()
             if not isfinite(valor_brl) or valor_brl <= 0:
                 raise ValueError("Informe um valor de compra maior que zero.")
             if valor_brl > self.estado.capital_brl:
                 raise ValueError("O valor da compra excede seu saldo em reais.")
+            estado_anterior = Estado.from_dict(self.estado.to_dict())
+            historico_anterior = list(self.historico)
             trade = executar_compra(self.estado, preco, valor_brl, "manual")
             self._registrar_trade(trade)
-            self._salvar_estado()
-            self._salvar_historico()
+            self._persistir_trade(estado_anterior, historico_anterior)
             self._registrar_patrimonio(
                 preco, getattr(self, "ultimo_update", None), force=True
             )
@@ -237,13 +356,15 @@ class MotorSimulador:
 
     def vender_manual(self, quantidade_btc: float):
         with self.lock:
+            self._validar_persistencia()
             preco = self._validar_cotacao_para_operacao()
+            estado_anterior = Estado.from_dict(self.estado.to_dict())
+            historico_anterior = list(self.historico)
             trade = executar_venda_quantidade(
                 self.estado, preco, quantidade_btc, "manual"
             )
             self._registrar_trade(trade)
-            self._salvar_estado()
-            self._salvar_historico()
+            self._persistir_trade(estado_anterior, historico_anterior)
             self._registrar_patrimonio(
                 preco, getattr(self, "ultimo_update", None), force=True
             )
@@ -251,6 +372,7 @@ class MotorSimulador:
 
     def depositar_manual(self, valor_brl: float):
         with self.lock:
+            self._validar_persistencia()
             evento = registrar_deposito(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
             self._salvar_estado()
@@ -264,6 +386,7 @@ class MotorSimulador:
 
     def sacar_manual(self, valor_brl: float):
         with self.lock:
+            self._validar_persistencia()
             evento = registrar_saque(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
             self._salvar_estado()
@@ -340,10 +463,16 @@ class MotorSimulador:
                 with self.lock:
                     acao = (
                         decidir_acao(self.estado, cotacao.preco_brl)
-                        if cotacao.atual
+                        if cotacao.atual and not self.erro_persistencia
                         else {"acao": "NADA"}
                     )
                     trade_executado = None
+                    estado_anterior = (
+                        Estado.from_dict(self.estado.to_dict())
+                        if acao["acao"] != "NADA"
+                        else None
+                    )
+                    historico_anterior = list(self.historico)
 
                     if acao["acao"] == "COMPRA":
                         trade_executado = executar_compra(
@@ -358,6 +487,9 @@ class MotorSimulador:
                         )
                         self._registrar_trade(trade_executado)
 
+                    if trade_executado is not None and estado_anterior is not None:
+                        self._persistir_trade(estado_anterior, historico_anterior)
+
                     self.preco_atual = cotacao.preco_brl
                     self.fonte_preco = cotacao.fonte
                     self.preco_atualizado = cotacao.atual
@@ -370,13 +502,15 @@ class MotorSimulador:
                     self.artigos_analistas = artigos_analistas
                     self.atualizado_analistas = atualizado_analistas
                     self.erro_analise = erro_analise
-                    self._salvar_estado()
-                    self._salvar_historico()
-                    self._registrar_patrimonio(
-                        cotacao.preco_brl,
-                        cotacao.timestamp,
-                        force=trade_executado is not None,
-                    )
+                    if not self.erro_persistencia:
+                        if trade_executado is None:
+                            self._salvar_estado()
+                            self._salvar_historico()
+                        self._registrar_patrimonio(
+                            cotacao.preco_brl,
+                            cotacao.timestamp,
+                            force=trade_executado is not None,
+                        )
 
             except Exception as e:
                 print(f"[ERRO no motor] {e}")
@@ -428,7 +562,16 @@ class AppBTC(ctk.CTk):
         self.conteudo.grid_rowconfigure(8, weight=2, minsize=220)
 
         # Motor
-        self.motor = MotorSimulador()
+        try:
+            self.motor = MotorSimulador()
+        except (OSError, RuntimeError, ValueError) as exc:
+            messagebox.showerror(
+                "Não foi possível abrir os dados do simulador",
+                f"Nenhum dado foi substituído.\n\n{exc}",
+                parent=self,
+            )
+            self.destroy()
+            return
         self._notified_trade_count = len(self.motor.historico)
         self.motor.iniciar()
 
@@ -1151,6 +1294,7 @@ class AppBTC(ctk.CTk):
             fluxo_caixa = list(self.motor.fluxo_caixa)
             equity_history = list(self.motor.equity_history)
             erro_patrimonio = self.motor.erro_patrimonio
+            erro_persistencia = self.motor.erro_persistencia
             preco = self.motor.preco_atual
             ultimo_update = self.motor.ultimo_update
             fonte_preco = self.motor.fonte_preco
@@ -1185,6 +1329,9 @@ class AppBTC(ctk.CTk):
                 cor_status = CORES["amarelo_pastel"]
             if erro_patrimonio:
                 status += f"  |  Erro ao salvar curva: {erro_patrimonio}"
+                cor_status = CORES["amarelo_pastel"]
+            if erro_persistencia:
+                status += f"  |  {erro_persistencia}"
                 cor_status = CORES["amarelo_pastel"]
             self.lbl_status.configure(text=status, text_color=cor_status)
         else:

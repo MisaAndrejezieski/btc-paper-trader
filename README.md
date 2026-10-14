@@ -45,6 +45,12 @@ movimentações manuais de saldo, separadas do histórico de trades.
   saldo em BRL, não são trades, não pagam taxa e ficam em `cash_flow.json`.
   Saques só podem usar o saldo disponível em reais; BTC não é vendido
   automaticamente para cobrir um saque.
+- **Integridade dos dados:** estado, trades, fluxo de caixa e patrimônio são
+  salvos por substituição atômica para evitar arquivos JSON truncados. Trades
+  usam `trade_transaction.json` como diário temporário: se o app for
+  interrompido entre salvar o saldo e o histórico, a transação é recuperada ao
+  reiniciar. Se um arquivo salvo estiver inválido, o app interrompe a abertura
+  e informa o caminho, sem substituí-lo por dados vazios.
 - **Capital e resultado:** o capital líquido considera o capital inicial mais
   depósitos menos saques. O lucro/prejuízo exibido compara esse valor ao
   patrimônio atual.
