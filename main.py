@@ -1428,16 +1428,21 @@ class AppBTC(ctk.CTk):
         else:
             horario_mercado = "sem histórico"
         direcao = "positivo" if sentimento > 0.05 else "negativo" if sentimento < -0.05 else "neutro"
+        analises_direcionais = sum(
+            article.analyst_view and article.sentiment != 0
+            for article in artigos
+        )
         sentimento_texto = (
-            f"sinal das notícias {direcao} ({sentimento:+.2f}, "
-            f"{len(artigos)} matérias; {horario_analistas})"
+            f"sinal das análises de analistas {direcao} ({sentimento:+.2f}, "
+            f"{analises_direcionais} matérias direcionais; {horario_analistas})"
         )
         self.lbl_noticias_status.configure(
             text=(
-                f"{len(artigos)} matéria(s) direcional(is) recente(s) · "
+                f"{len(artigos)} notícia(s) recente(s) sobre BTC · "
+                f"{analises_direcionais} análise(s) direcional(is) de analistas · "
                 f"sinal agregado {direcao} ({sentimento:+.2f}) · "
                 f"atualizado: {horario_analistas}. "
-                "Leitura lexical de manchetes e descrições; não representa consenso."
+                "Amostra limitada aos feeds e últimas 24h; leitura lexical, não consenso."
                 + (f" Aviso da consulta: {erro}" if erro and not artigos else "")
             ),
             text_color=(
@@ -1469,8 +1474,8 @@ class AppBTC(ctk.CTk):
             mensagem_fontes = ctk.CTkLabel(
                 self.frame_fontes_analistas,
                 text=(
-                    "Nenhuma matéria recente com perspectiva direcional foi encontrada. "
-                    "Os feeds são consultados periodicamente."
+                    "Nenhuma notícia recente sobre BTC foi encontrada nos feeds. "
+                    "Eles são consultados periodicamente."
                 ),
                 font=FONTE_PEQUENA,
                 text_color=CORES["texto_apagado"],
@@ -1482,13 +1487,24 @@ class AppBTC(ctk.CTk):
             self.widgets_fontes_analistas.append(mensagem_fontes)
         else:
             for index, article in enumerate(artigos[:5]):
-                sinal = "+" if article.sentiment > 0 else "−"
                 publicado = article.published_at.astimezone(
                     FUSO_LOCAL
                 ).strftime("%d/%m %H:%M")
+                if article.analyst_view and article.sentiment:
+                    classificacao = (
+                        "ANÁLISE DE ANALISTA · "
+                        f"tom lexical {article.sentiment:+.2f}"
+                    )
+                elif article.sentiment:
+                    classificacao = (
+                        "NOTÍCIA BTC · tendência lexical "
+                        f"{'positiva' if article.sentiment > 0 else 'negativa'}"
+                    )
+                else:
+                    classificacao = "NOTÍCIA BTC · sem sinal direcional identificado"
                 texto = (
-                    f"{article.publisher} · sinal {sinal}{abs(article.sentiment):.2f}"
-                    f" · {publicado}\n{article.title}\n"
+                    f"{classificacao} · {article.publisher} · {publicado}\n"
+                    f"{article.title}\n"
                     f"{article.author} · Abrir matéria"
                 )
                 button = ctk.CTkButton(

@@ -27,6 +27,10 @@ ANALYST_FEEDS = (
 _ANALYST_MENTION = re.compile(
     r"\b(?:analysts?|strategists?|researchers?|research firms?)\b"
 )
+_NEGATED_ANALYST_MENTION = re.compile(
+    r"\b(?:no|without|not|isn't|is not)\s+(?:an?\s+)?"
+    r"(?:bitcoin\s+)?(?:analysts?|strategists?|researchers?)\b"
+)
 _BULLISH_TERMS = (
     "bullish", "rally", "surge", "breakout", "higher", "upside",
     "gains", "rise", "rises", "soars", "rebound", "accumulate",
@@ -45,6 +49,7 @@ class AnalystArticle:
     url: str
     published_at: datetime
     sentiment: float
+    analyst_view: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,7 +134,7 @@ def analisar_feed_analistas(
     publisher: str,
     now: datetime | None = None,
 ) -> list[AnalystArticle]:
-    """Keep recent BTC stories that explicitly discuss analyst views."""
+    """Keep recent BTC stories and mark whether they discuss analyst views."""
     agora = now or datetime.now(timezone.utc)
     if agora.tzinfo is None:
         agora = agora.replace(tzinfo=timezone.utc)
@@ -142,12 +147,11 @@ def analisar_feed_analistas(
         content = f"{title} {description}".casefold()
         if "bitcoin" not in content and "btc" not in content:
             continue
-        if not _ANALYST_MENTION.search(content):
-            continue
-
         score = _sentimento(content)
-        if score == 0:
-            continue
+        analyst_view = bool(
+            _ANALYST_MENTION.search(content)
+            and not _NEGATED_ANALYST_MENTION.search(content)
+        )
         date_text = item.findtext("pubDate")
         if not date_text:
             continue
@@ -172,6 +176,7 @@ def analisar_feed_analistas(
             url=link,
             published_at=published_at.astimezone(timezone.utc),
             sentiment=score,
+            analyst_view=analyst_view,
         ))
     return articles
 
@@ -203,14 +208,21 @@ def buscar_sentimento_analistas() -> tuple[float, list[AnalystArticle], str]:
     articles = list(unique_articles.values())
 
     now_utc = agora.astimezone(timezone.utc)
+    analyst_articles = [
+        article for article in articles
+        if article.analyst_view and article.sentiment != 0
+    ]
     weights = [
         math.exp(-math.log(2) * max(
             0.0, (now_utc - article.published_at).total_seconds() / 3600
         ) / 8)
-        for article in articles
+        for article in analyst_articles
     ]
     score = (
-        sum(article.sentiment * weight for article, weight in zip(articles, weights))
+        sum(
+            article.sentiment * weight
+            for article, weight in zip(analyst_articles, weights)
+        )
         / sum(weights)
         if weights else 0.0
     )

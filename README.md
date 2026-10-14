@@ -58,11 +58,11 @@ movimentações manuais de saldo, separadas do histórico de trades.
 - **Horários:** exibidos no fuso de Carambeí, Paraná (America/Sao_Paulo).
 - **Gráficos:** cotação BTC/BRL das últimas 24h e cenário estatístico para as
   próximas 24h, com faixa baseada na volatilidade observada. A projeção combina
-  momentum recente e um ajuste limitado pelo sinal de matérias que reportam
-  perspectivas direcionais de analistas em CoinDesk e Cointelegraph. As matérias
-  são exibidas em um painel próprio como links, com título, fonte, autoria,
-  horário e sinal classificado; o sentimento é uma classificação lexical simples,
-  não consenso de mercado nem previsão oficial. Se não houver matérias
+  momentum recente e um ajuste limitado pelo sinal lexical de matérias
+  explicitamente sobre analistas. O painel próprio exibe até cinco notícias
+  recentes sobre BTC dos feeds CoinDesk e Cointelegraph, com título, fonte,
+  autoria, horário e classificação lexical; a classificação não é consenso de
+  mercado nem previsão oficial. Se não houver matérias
   elegíveis, a projeção usa apenas os dados de mercado.
 - **Atualização dos gráficos:** acompanha o ciclo de cotação (5 minutos);
   matérias são consultadas a cada 15 minutos.

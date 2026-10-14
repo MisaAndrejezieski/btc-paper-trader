@@ -227,7 +227,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertIn("Capital líquido:      R$     1.150,00", output.getvalue())
         self.assertIn("Lucro/prejuízo:       R$        +0,00", output.getvalue())
 
-    def test_analyst_feed_uses_recent_directional_btc_articles(self):
+    def test_feed_includes_recent_btc_news_and_marks_analyst_views(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
         xml = f"""<?xml version="1.0"?>
         <rss><channel>
@@ -247,12 +247,15 @@ class SimulatorTests(unittest.TestCase):
         </channel></rss>"""
 
         articles = analisar_feed_analistas(xml, "Test Feed", now)
-        self.assertEqual(len(articles), 1)
+        self.assertEqual(len(articles), 2)
         self.assertEqual(articles[0].author, "Jane Analyst")
         self.assertEqual(articles[0].sentiment, 1)
+        self.assertTrue(articles[0].analyst_view)
         self.assertEqual(articles[0].url, "https://example.com/bitcoin-outlook")
+        self.assertEqual(articles[1].sentiment, 0)
+        self.assertFalse(articles[1].analyst_view)
 
-    def test_general_bitcoin_outlook_is_not_mistaken_for_analyst_consensus(self):
+    def test_general_bitcoin_outlook_is_shown_but_not_as_analyst_consensus(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
         xml = f"""<rss><channel>
           <item>
@@ -263,7 +266,10 @@ class SimulatorTests(unittest.TestCase):
           </item>
         </channel></rss>"""
 
-        self.assertEqual(analisar_feed_analistas(xml, "Test Feed", now), [])
+        articles = analisar_feed_analistas(xml, "Test Feed", now)
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0].sentiment, 1)
+        self.assertFalse(articles[0].analyst_view)
 
     def test_forecast_is_bounded_and_analyst_signal_is_not_dominant(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
