@@ -43,6 +43,8 @@ class Estado:
     ultima_compra_ts: str = ""          # timestamp da última compra
     ultimo_preco_compra_brl: float = 0.0
     ultimo_aporte_ts: str = ""          # mantido para ler estados antigos
+    take_profit_executado: bool = False
+    stop_loss_executado: bool = False
     total_compras: int = 0
     total_vendas: int = 0
     total_taxas_brl: float = 0.0

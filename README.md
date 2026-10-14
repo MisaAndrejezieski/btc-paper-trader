@@ -9,9 +9,15 @@ movimentações manuais de saldo, separadas do histórico de trades.
 
 - **Compra extra:** compra o dobro do valor-base configurado se o preço cair
   5% desde a última compra; usa o preço médio como referência em estados antigos.
-- **Take-profit:** vende 30% se o preço subir 8% sobre o preço médio
-- **Stop-loss:** vende 50% se o preço cair 25% sobre o preço médio
-- **Nunca vende tudo:** sempre fica uma parte exposta
+- **Primeira compra:** feita manualmente por você. Depois, compras extras e
+  vendas automáticas usam apenas o saldo e os BTC já existentes no simulador.
+- **Take-profit:** vende 30% uma vez se o preço subir 8% sobre o preço médio;
+  pode voltar a disparar depois de uma nova compra.
+- **Stop-loss:** vende 50% uma vez se o preço cair 25% sobre o preço médio;
+  enquanto a queda persistir, não recompra automaticamente. Uma nova compra
+  reabilita as regras de saída.
+- **Vendas automáticas parciais:** não liquidam toda a posição de uma vez.
+  Uma venda manual pode liquidar a quantidade informada, inclusive todo o BTC.
 - **Operação manual:** informe um valor em reais para comprar ou uma quantidade
   de BTC para vender. As ordens são simuladas e incluem a taxa configurada.
 - **Fluxo de caixa:** registre depósitos e saques manualmente. Eles alteram o

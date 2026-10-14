@@ -67,6 +67,8 @@ def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: 
     estado.preco_medio_brl = novo_preco_medio
     estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
     estado.ultimo_preco_compra_brl = preco_brl
+    estado.take_profit_executado = False
+    estado.stop_loss_executado = False
     estado.total_compras += 1
     estado.total_taxas_brl += taxa
 
@@ -108,6 +110,10 @@ def executar_venda_quantidade(
 
     estado.capital_brl += valor_liquido
     estado.capital_btc -= quantidade
+    if motivo == "take_profit":
+        estado.take_profit_executado = True
+    elif motivo == "stop_loss":
+        estado.stop_loss_executado = True
     estado.total_vendas += 1
     estado.total_taxas_brl += taxa
 

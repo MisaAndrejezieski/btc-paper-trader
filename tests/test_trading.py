@@ -18,6 +18,7 @@ from market_insights import analisar_feed_analistas, calcular_previsao
 from report import imprimir_snapshot
 from simulator import (
     executar_compra,
+    executar_venda,
     executar_venda_quantidade,
     registrar_deposito,
     registrar_saque,
@@ -90,6 +91,13 @@ class SimulatorTests(unittest.TestCase):
             registrar_saque(self.estado, 1000.01)
         self.assertEqual(self.estado.capital_brl, 1000)
 
+    def test_old_saved_state_uses_defaults_for_new_strategy_fields(self):
+        estado = Estado.from_dict({"capital_brl": 1000, "capital_btc": 0.01})
+
+        self.assertEqual(estado.ultimo_preco_compra_brl, 0)
+        self.assertFalse(estado.take_profit_executado)
+        self.assertFalse(estado.stop_loss_executado)
+
     def test_strategy_does_not_buy_periodically_from_existing_balance(self):
         self.estado.capital_btc = 0.01
         self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
@@ -106,6 +114,28 @@ class SimulatorTests(unittest.TestCase):
 
         self.assertEqual(acao["acao"], "COMPRA")
         self.assertEqual(acao["motivo"], "compra_extra")
+
+    def test_take_profit_only_sells_once_until_next_buy(self):
+        executar_compra(self.estado, 200_000, 500, "manual")
+        acao = decidir_acao(self.estado, 216_000)
+        self.assertEqual(acao["motivo"], "take_profit")
+        executar_venda(self.estado, 216_000, acao["percentual"], acao["motivo"])
+
+        self.assertEqual(decidir_acao(self.estado, 216_000), {"acao": "NADA"})
+
+        executar_compra(self.estado, 216_000, 100, "manual")
+        self.assertFalse(self.estado.take_profit_executado)
+
+    def test_stop_loss_only_sells_once_and_does_not_rebuy_while_falling(self):
+        executar_compra(self.estado, 200_000, 500, "manual")
+        acao = decidir_acao(self.estado, 150_000)
+        self.assertEqual(acao["motivo"], "stop_loss")
+        executar_venda(self.estado, 150_000, acao["percentual"], acao["motivo"])
+
+        self.assertEqual(decidir_acao(self.estado, 150_000), {"acao": "NADA"})
+
+        executar_compra(self.estado, 150_000, 100, "manual")
+        self.assertFalse(self.estado.stop_loss_executado)
 
     def test_manual_order_requires_live_quote_and_persists_trade(self):
         motor = MotorSimulador.__new__(MotorSimulador)

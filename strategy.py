@@ -16,9 +16,25 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
       {"acao": "VENDA", "percentual": 50, "motivo": "stop_loss"}
       {"acao": "NADA"}
     """
+    variacao = (
+        (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
+        if estado.preco_medio_brl > 0 else 0.0
+    )
+
+    # Evita repetir a proteção ou recomprar enquanto a queda que a disparou persiste.
+    if (
+        CONFIG["stop_loss_ativo"]
+        and estado.stop_loss_executado
+        and variacao <= -(CONFIG["stop_loss_pct"] / 100)
+    ):
+        return {"acao": "NADA"}
+
     # --- Verifica stop-loss PRIMEIRO (proteção é prioridade) ---
-    if CONFIG["stop_loss_ativo"] and estado.preco_medio_brl > 0:
-        variacao = (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
+    if (
+        CONFIG["stop_loss_ativo"]
+        and not estado.stop_loss_executado
+        and estado.preco_medio_brl > 0
+    ):
         if variacao <= -(CONFIG["stop_loss_pct"] / 100):
             return {
                 "acao": "VENDA",
@@ -27,8 +43,11 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
             }
 
     # --- Verifica take-profit ---
-    if estado.preco_medio_brl > 0 and estado.capital_btc > 0:
-        variacao = (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
+    if (
+        estado.preco_medio_brl > 0
+        and estado.capital_btc > 0
+        and not estado.take_profit_executado
+    ):
         if variacao >= (CONFIG["take_profit_pct"] / 100):
             return {
                 "acao": "VENDA",
