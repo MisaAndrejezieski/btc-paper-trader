@@ -62,6 +62,21 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(self.estado.capital_brl, 1150)
         self.assertEqual(self.estado.total_taxas_brl, 0)
 
+    def test_motor_records_deposits_and_withdrawals_separately(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = self.estado
+        motor.historico = []
+        motor.fluxo_caixa = []
+        motor.lock = threading.Lock()
+        motor._salvar_estado = lambda: None
+        motor._salvar_fluxo_caixa = lambda: None
+
+        motor.depositar_manual(250)
+        motor.sacar_manual(100)
+
+        self.assertEqual([item["tipo"] for item in motor.fluxo_caixa], ["DEPOSITO", "SAQUE"])
+        self.assertEqual(motor.historico, [])
+
     def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
         for operacao in (registrar_deposito, registrar_saque):
             for valor in (0, -1, math.inf, math.nan):
@@ -83,7 +98,7 @@ class SimulatorTests(unittest.TestCase):
 
     def test_extra_buy_uses_price_of_last_purchase_not_average(self):
         self.estado.capital_btc = 0.01
-        self.estado.preco_medio_brl = 200_000
+        self.estado.preco_medio_brl = 290_000
         self.estado.ultimo_preco_compra_brl = 300_000
         self.estado.ultima_compra_ts = datetime.now(timezone.utc).isoformat()
 
@@ -141,6 +156,21 @@ class SimulatorTests(unittest.TestCase):
         with redirect_stdout(output):
             imprimir_snapshot(self.estado, 200_000, preco_inicial_brl=100_000)
         self.assertIn("+100.00%", output.getvalue())
+
+    def test_terminal_report_uses_deposits_and_withdrawals_in_net_capital(self):
+        output = StringIO()
+        fluxo_caixa = [
+            {"tipo": "DEPOSITO", "valor_brl": 250},
+            {"tipo": "SAQUE", "valor_brl": 100},
+        ]
+        self.estado.capital_brl = 1150
+        with redirect_stdout(output):
+            imprimir_snapshot(
+                self.estado, 200_000, fluxo_caixa=fluxo_caixa
+            )
+
+        self.assertIn("Capital líquido:      R$     1.150,00", output.getvalue())
+        self.assertIn("Lucro/prejuízo:       R$        +0,00", output.getvalue())
 
     def test_analyst_feed_uses_recent_directional_btc_articles(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
