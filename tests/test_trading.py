@@ -369,6 +369,21 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(create_label.call_args.kwargs["cursor"], "hand2")
         open_url.assert_called_once_with("https://example.com/article")
 
+    def test_close_cancels_all_pending_tk_callbacks_before_destroy(self):
+        app = AppBTC.__new__(AppBTC)
+        app.tk = Mock()
+        app.tk.call.return_value = "after#1 after#2 after#3"
+        app.tk.splitlist.return_value = ("after#1", "after#2", "after#3")
+        app.after_cancel = Mock()
+
+        app._cancelar_callbacks_pendentes()
+
+        self.assertEqual(app.tk.call.call_args.args, ("after", "info"))
+        self.assertEqual(
+            [call.args[0] for call in app.after_cancel.call_args_list],
+            ["after#1", "after#2", "after#3"],
+        )
+
     def test_terminal_buy_and_hold_needs_an_initial_price(self):
         output = StringIO()
         with redirect_stdout(output):

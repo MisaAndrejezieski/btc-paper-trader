@@ -1034,18 +1034,24 @@ class AppBTC(ctk.CTk):
         lbl.pack(anchor="w")
         return lbl
 
+    def _cancelar_callbacks_pendentes(self):
+        try:
+            callback_ids = self.tk.splitlist(self.tk.call("after", "info"))
+        except TclError:
+            return
+        for callback_id in callback_ids:
+            try:
+                self.after_cancel(callback_id)
+            except (RuntimeError, TclError):
+                continue
+
     def _ao_fechar(self):
         if self._closing:
             return
         self._closing = True
-        for callback_id in (self._after_id, self._toast_after_id):
-            if callback_id is not None:
-                try:
-                    self.after_cancel(callback_id)
-                except (RuntimeError, TclError):
-                    pass
         self._after_id = None
         self._toast_after_id = None
+        self._cancelar_callbacks_pendentes()
         self.motor.parar()
         plt.close(self.fig)
         plt.close(self.fig_backtest)
