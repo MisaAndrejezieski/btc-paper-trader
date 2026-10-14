@@ -6,14 +6,16 @@ Tudo em um único processo: `python main.py`
 
 import json
 import os
+import queue
 import tempfile
 import threading
 import time
+from bisect import bisect_left
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from math import isfinite
 from zoneinfo import ZoneInfo
-from tkinter import filedialog, messagebox
+from tkinter import TclError, filedialog, messagebox
 import webbrowser
 
 import customtkinter as ctk
@@ -460,6 +462,9 @@ class MotorSimulador:
                             erro_analise = f"{erro_analise} Projeção indisponível: {exc}".strip()
                             previsao_dia = []
 
+                if not self.rodando:
+                    break
+
                 with self.lock:
                     acao = (
                         decidir_acao(self.estado, cotacao.preco_brl)
@@ -535,7 +540,11 @@ class AppBTC(ctk.CTk):
         self._ultimo_grafico_renderizado = None
         self._ultimo_patrimonio_renderizado = None
         self._backtest_em_execucao = False
+        self._backtest_resultados = queue.Queue()
+        self._metricas_cache_key = None
+        self._metricas_cache = None
         self._toast_after_id = None
+        self._closing = False
         self.title("BTC Paper Trader")
         largura_tela = self.winfo_screenwidth()
         altura_tela = self.winfo_screenheight()
@@ -1027,29 +1036,18 @@ class AppBTC(ctk.CTk):
         return lbl
 
     def _ao_fechar(self):
-        if self._after_id is not None:
-            self.after_cancel(self._after_id)
-            self._after_id = None
-
+        if self._closing:
+            return
+        self._closing = True
+        for callback_id in (self._after_id, self._toast_after_id):
+            if callback_id is not None:
+                try:
+                    self.after_cancel(callback_id)
+                except (RuntimeError, TclError):
+                    pass
+        self._after_id = None
+        self._toast_after_id = None
         self.motor.parar()
-        widgets = [self]
-        for widget in widgets:
-            widgets.extend(widget.winfo_children())
-        callbacks = {
-            callback_id: self.tk.call("after", "info", callback_id)[0]
-            for callback_id in self.tk.splitlist(self.tk.call("after", "info"))
-        }
-        for callback_id, script in callbacks.items():
-            owner = next(
-                (
-                    widget for widget in widgets
-                    if script in (widget._tclCommands or ())
-                ),
-                None,
-            )
-            if owner is not None:
-                owner.after_cancel(callback_id)
-
         plt.close(self.fig)
         plt.close(self.fig_backtest)
         plt.close(self.fig_patrimonio)
@@ -1127,9 +1125,9 @@ class AppBTC(ctk.CTk):
                 RequestException, OSError, RuntimeError, ValueError,
                 KeyError, TypeError, IndexError,
             ) as exc:
-                self.after(0, self._finalizar_backtest, None, str(exc), periodo_texto)
+                self._backtest_resultados.put((None, str(exc), periodo_texto))
             else:
-                self.after(0, self._finalizar_backtest, result, "", periodo_texto)
+                self._backtest_resultados.put((result, "", periodo_texto))
 
         threading.Thread(target=trabalho, daemon=True).start()
 
@@ -1208,6 +1206,27 @@ class AppBTC(ctk.CTk):
             self.after_cancel(self._toast_after_id)
         self._toast_after_id = self.after(7000, self.lbl_toast.place_forget)
 
+    def _criar_link_noticia(self, parent, text: str, url: str, index: int):
+        label = ctk.CTkLabel(
+            parent,
+            text=text,
+            anchor="w",
+            justify="left",
+            height=58,
+            wraplength=max(400, self.conteudo.winfo_width() - 110),
+            fg_color=CORES["bg_secundario"],
+            corner_radius=6,
+            text_color=CORES["azul_pastel"],
+            font=FONTE_PEQUENA,
+            cursor="hand2",
+        )
+        label.grid(row=index, column=0, sticky="ew", padx=3, pady=(0, 5))
+        label.bind(
+            "<Button-1>",
+            lambda _event, article_url=url: webbrowser.open(article_url),
+        )
+        return label
+
     @staticmethod
     def _ler_numero(texto: str) -> float:
         texto = texto.strip().replace("R$", "").replace(" ", "")
@@ -1285,10 +1304,20 @@ class AppBTC(ctk.CTk):
 
     # -----------------------------------------------------------------
     def atualizar_gui(self):
-        if not self.winfo_exists():
+        if self._closing or not self.winfo_exists():
             return
 
-        with self.motor.lock:
+        while True:
+            try:
+                resultado, erro, periodo = self._backtest_resultados.get_nowait()
+            except queue.Empty:
+                break
+            self._finalizar_backtest(resultado, erro, periodo)
+
+        if not self.motor.lock.acquire(timeout=0.05):
+            self._after_id = self.after(100, self.atualizar_gui)
+            return
+        try:
             estado = self.motor.estado
             historico = list(self.motor.historico)
             fluxo_caixa = list(self.motor.fluxo_caixa)
@@ -1307,6 +1336,8 @@ class AppBTC(ctk.CTk):
             atualizado_mercado = self.motor.atualizado_mercado
             atualizado_analistas = self.motor.atualizado_analistas
             erro_analise = self.motor.erro_analise
+        finally:
+            self.motor.lock.release()
 
         if preco and estado:
             self._atualizar_tela(
@@ -1371,7 +1402,8 @@ class AppBTC(ctk.CTk):
             self._atualizar_grafico_patrimonio(equity_history, historico)
             self._ultimo_patrimonio_renderizado = chave_patrimonio
 
-        self._after_id = self.after(2000, self.atualizar_gui)
+        if not self._closing:
+            self._after_id = self.after(2000, self.atualizar_gui)
 
     def _atualizar_graficos(
         self,
@@ -1654,23 +1686,11 @@ class AppBTC(ctk.CTk):
                     f"{article.title}\n"
                     f"{article.author} · Abrir matéria"
                 )
-                button = ctk.CTkButton(
-                    self.frame_fontes_analistas,
-                    text=texto,
-                    command=partial(webbrowser.open, article.url),
-                    anchor="w",
-                    height=58,
-                    wraplength=max(400, self.conteudo.winfo_width() - 110),
-                    fg_color=CORES["bg_secundario"],
-                    hover_color=CORES["bg_destaque"],
-                    text_color=CORES["azul_pastel"],
-                    font=FONTE_PEQUENA,
+                link = self._criar_link_noticia(
+                    self.frame_fontes_analistas, texto, article.url, index
                 )
-                button.grid(
-                    row=index, column=0, sticky="ew", padx=3, pady=(0, 5),
-                )
-                self.botoes_fontes_analistas.append(button)
-                self.widgets_fontes_analistas.append(button)
+                self.botoes_fontes_analistas.append(link)
+                self.widgets_fontes_analistas.append(link)
 
     def _atualizar_tela(
         self, estado, historico, preco, fonte_preco, fluxo_caixa, equity_history
@@ -1750,7 +1770,19 @@ class AppBTC(ctk.CTk):
             text=f"{lucro_pct:+.2f}%",
             text_color=CORES["lucro"] if lucro_pct >= 0 else CORES["prejuizo"]
         )
-        metricas = calcular_metricas_risco(historico, equity_history)
+        metricas_key = (
+            len(historico),
+            historico[-1].get("timestamp") if historico else None,
+            len(equity_history),
+            equity_history[-1].get("timestamp") if equity_history else None,
+            equity_history[-1].get("nav") if equity_history else None,
+        )
+        if metricas_key != self._metricas_cache_key:
+            self._metricas_cache = calcular_metricas_risco(
+                historico, equity_history
+            )
+            self._metricas_cache_key = metricas_key
+        metricas = self._metricas_cache
         drawdown = metricas["max_drawdown_pct"]
         sharpe = metricas["sharpe_ratio"]
         win_rate = metricas["win_rate_pct"]
@@ -1859,10 +1891,13 @@ class AppBTC(ctk.CTk):
             for trade in historico:
                 try:
                     trade_time = self._para_horario_local(trade["timestamp"])
-                    index = min(
-                        range(len(timestamps)),
-                        key=lambda idx: abs((timestamps[idx] - trade_time).total_seconds()),
-                    )
+                    index = bisect_left(timestamps, trade_time)
+                    if index >= len(timestamps):
+                        index = len(timestamps) - 1
+                    elif index > 0 and (
+                        trade_time - timestamps[index - 1]
+                    ) <= (timestamps[index] - trade_time):
+                        index -= 1
                 except (KeyError, TypeError, ValueError):
                     continue
                 if abs((timestamps[index] - trade_time).total_seconds()) > 3600:
