@@ -1,6 +1,7 @@
 # BTC Paper Trader
 
-Simulador de paper trading de Bitcoin em Python.
+Simulador de paper trading de Bitcoin em Python. Começa com saldo zerado;
+adicione saldo fictício manualmente antes de realizar a primeira compra.
 Acompanha o preço real do BTC e simula trades automáticos de compra extra,
 take-profit parcial e stop-loss, com capital fictício. Depósitos e saques são
 movimentações manuais de saldo, separadas do histórico de trades.
@@ -55,6 +56,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Execute a interface com `python main.py`. A estratégia automática de trading
-continua ativa, mas não adiciona capital nem faz compras periódicas de DCA;
-deposite saldo manualmente para disponibilizar mais reais para os trades.
+Execute a interface com `python main.py`. Registre um depósito fictício para
+adicionar saldo e faça a primeira compra manual. Depois, as regras automáticas
+de trading usam apenas o saldo disponível; o simulador não adiciona capital nem
+faz compras periódicas.

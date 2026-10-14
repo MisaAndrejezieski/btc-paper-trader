@@ -19,6 +19,7 @@ dist/
 # Estado do simulador (local, não versionar)
 state.json
 history.json
+cash_flow.json
 data/
 
 # IDE

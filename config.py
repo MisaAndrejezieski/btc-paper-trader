@@ -5,7 +5,7 @@ Todos os parâmetros ajustáveis ficam aqui, centralizados.
 
 CONFIG = {
     # --- Capital inicial ---
-    "capital_inicial_brl": 5000.00,
+    "capital_inicial_brl": 0.00,
 
     # --- Valor base de compra extra ---
     "valor_compra_base_brl": 150.00,
