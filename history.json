@@ -1,0 +1,38 @@
+[
+  {
+    "timestamp": "2026-10-14T15:56:32.894311+00:00",
+    "tipo": "COMPRA",
+    "preco_brl": 411491.0,
+    "quantidade_btc": 0.024277566216515063,
+    "valor_brl": 10000.0,
+    "taxa_brl": 10.0,
+    "motivo": "manual"
+  },
+  {
+    "timestamp": "2026-10-14T18:05:42.487735+00:00",
+    "tipo": "COMPRA",
+    "preco_brl": 410580.0,
+    "quantidade_btc": 0.24331433581762385,
+    "valor_brl": 100000.0,
+    "taxa_brl": 100.0,
+    "motivo": "manual"
+  },
+  {
+    "timestamp": "2026-10-14T18:06:37.449020+00:00",
+    "tipo": "COMPRA",
+    "preco_brl": 410362.0,
+    "quantidade_btc": 0.24344359370507015,
+    "valor_brl": 100000.0,
+    "taxa_brl": 100.0,
+    "motivo": "manual"
+  },
+  {
+    "timestamp": "2026-10-14T18:22:46.772298+00:00",
+    "tipo": "COMPRA",
+    "preco_brl": 410021.0,
+    "quantidade_btc": 0.2436460571531702,
+    "valor_brl": 100000.0,
+    "taxa_brl": 100.0,
+    "motivo": "manual"
+  }
+]

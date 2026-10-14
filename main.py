@@ -26,6 +26,10 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 from requests import RequestException
 
+from customtkinter.windows.widgets.appearance_mode.appearance_mode_tracker import (
+    AppearanceModeTracker,
+)
+from customtkinter.windows.widgets.scaling.scaling_tracker import ScalingTracker
 from config import CONFIG
 from fetcher import Cotacao, buscar_cotacao_btc_brl
 from market_insights import (
@@ -67,6 +71,7 @@ def formatar_reais(valor: float, sinal: bool = False) -> str:
 
 class MotorSimulador:
     def __init__(self):
+        self._migrar_arquivos_legados()
         self._recuperar_transacao_trade()
         self.estado = self._carregar_estado()
         self.historico = self._carregar_historico()
@@ -90,6 +95,34 @@ class MotorSimulador:
         self.rodando = True
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._loop, daemon=True)
+
+    @staticmethod
+    def _migrar_arquivos_legados():
+        diretorio = os.getcwd()
+        for config_key in (
+            "state_file",
+            "history_file",
+            "trade_journal_file",
+            "cash_flow_file",
+            "equity_file",
+        ):
+            destino = os.path.join(diretorio, CONFIG[config_key])
+            legado = os.path.join(diretorio, os.path.basename(destino))
+            if not os.path.isfile(legado):
+                continue
+            if os.path.exists(destino):
+                with open(legado, "rb") as source, open(destino, "rb") as current:
+                    same_content = source.read() == current.read()
+                if not same_content:
+                    raise RuntimeError(
+                        f"Há dados diferentes em {legado} e {destino}. "
+                        "Nenhum arquivo foi alterado; resolva a duplicação antes "
+                        "de abrir o simulador."
+                    )
+                os.remove(legado)
+                continue
+            os.makedirs(os.path.dirname(destino), exist_ok=True)
+            os.replace(legado, destino)
 
     def _carregar_estado(self) -> Estado:
         if os.path.exists(CONFIG["state_file"]):
@@ -1039,11 +1072,43 @@ class AppBTC(ctk.CTk):
             callback_ids = self.tk.splitlist(self.tk.call("after", "info"))
         except TclError:
             return
+        widgets = [self]
+        for widget in widgets:
+            try:
+                widgets.extend(widget.winfo_children())
+            except TclError:
+                continue
         for callback_id in callback_ids:
             try:
-                self.after_cancel(callback_id)
+                script = self.tk.splitlist(
+                    self.tk.call("after", "info", callback_id)
+                )[0]
             except (RuntimeError, TclError):
                 continue
+            owner = next(
+                (
+                    widget for widget in widgets
+                    if script in (widget._tclCommands or ())
+                ),
+                None,
+            )
+            if owner is not None:
+                try:
+                    owner.after_cancel(callback_id)
+                except (RuntimeError, TclError):
+                    continue
+
+    def _desregistrar_rastreadores_customtkinter(self):
+        ScalingTracker.remove_window(self._set_scaling, self)
+        ScalingTracker.window_dpi_scaling_dict.pop(self, None)
+        if not ScalingTracker.window_widgets_dict:
+            ScalingTracker.update_loop_running = False
+        try:
+            AppearanceModeTracker.app_list.remove(self)
+        except ValueError:
+            pass
+        if not AppearanceModeTracker.app_list:
+            AppearanceModeTracker.update_loop_running = False
 
     def _ao_fechar(self):
         if self._closing:
@@ -1051,6 +1116,7 @@ class AppBTC(ctk.CTk):
         self._closing = True
         self._after_id = None
         self._toast_after_id = None
+        self._desregistrar_rastreadores_customtkinter()
         self._cancelar_callbacks_pendentes()
         self.motor.parar()
         plt.close(self.fig)

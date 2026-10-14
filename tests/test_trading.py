@@ -8,12 +8,14 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from io import StringIO
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from fetcher import Cotacao, buscar_cotacao_btc_brl
 from main import (
+    AppearanceModeTracker,
     AppBTC,
     MotorSimulador,
+    ScalingTracker,
     formatar_reais,
 )
 from models import Estado
@@ -369,20 +371,155 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(create_label.call_args.kwargs["cursor"], "hand2")
         open_url.assert_called_once_with("https://example.com/article")
 
-    def test_close_cancels_all_pending_tk_callbacks_before_destroy(self):
+    def test_close_cancels_callbacks_on_their_registering_widgets(self):
         app = AppBTC.__new__(AppBTC)
         app.tk = Mock()
-        app.tk.call.return_value = "after#1 after#2 after#3"
-        app.tk.splitlist.return_value = ("after#1", "after#2", "after#3")
-        app.after_cancel = Mock()
-
-        app._cancelar_callbacks_pendentes()
-
-        self.assertEqual(app.tk.call.call_args.args, ("after", "info"))
-        self.assertEqual(
-            [call.args[0] for call in app.after_cancel.call_args_list],
-            ["after#1", "after#2", "after#3"],
+        app._tclCommands = ["root_callback"]
+        app.tk.call.side_effect = [
+            "after#1 after#2",
+            ("root_callback", "timer"),
+            ("child_callback", "timer"),
+        ]
+        app.tk.splitlist.side_effect = lambda value: (
+            tuple(value.split()) if isinstance(value, str) else value
         )
+        child = Mock()
+        child._tclCommands = ["child_callback"]
+        child.winfo_children.return_value = []
+        with patch.object(app, "winfo_children", return_value=[child]):
+            app.after_cancel = Mock(name="root_after_cancel")
+            child.after_cancel = Mock(name="child_after_cancel")
+
+            app._cancelar_callbacks_pendentes()
+
+        self.assertEqual(app.tk.call.call_args_list[0].args, ("after", "info"))
+        app.after_cancel.assert_called_once_with("after#1")
+        child.after_cancel.assert_called_once_with("after#2")
+
+    def test_close_unregisters_customtkinter_root_trackers(self):
+        app = AppBTC.__new__(AppBTC)
+        app._set_scaling = Mock()
+        with (
+            patch.object(ScalingTracker, "window_widgets_dict", {app: []}),
+            patch.object(ScalingTracker, "window_dpi_scaling_dict", {app: 1.0}),
+            patch.object(ScalingTracker, "update_loop_running", True),
+            patch.object(AppearanceModeTracker, "app_list", [app]),
+            patch.object(AppearanceModeTracker, "update_loop_running", True),
+        ):
+            app._desregistrar_rastreadores_customtkinter()
+            self.assertFalse(ScalingTracker.window_widgets_dict)
+            self.assertFalse(ScalingTracker.window_dpi_scaling_dict)
+            self.assertFalse(ScalingTracker.update_loop_running)
+            self.assertFalse(AppearanceModeTracker.app_list)
+            self.assertFalse(AppearanceModeTracker.update_loop_running)
+
+    def test_app_close_orders_tracker_cleanup_before_destroy(self):
+        app = AppBTC.__new__(AppBTC)
+        app._closing = False
+        app._after_id = "after#gui"
+        app._toast_after_id = "after#toast"
+        app.fig = object()
+        app.fig_backtest = object()
+        app.fig_patrimonio = object()
+        app.motor = Mock()
+        steps = []
+        app._desregistrar_rastreadores_customtkinter = Mock(
+            side_effect=lambda: steps.append("unregister")
+        )
+        app._cancelar_callbacks_pendentes = Mock(
+            side_effect=lambda: steps.append("cancel")
+        )
+        app.motor.parar.side_effect = lambda: steps.append("stop motor")
+        app.destroy = Mock(side_effect=lambda: steps.append("destroy"))
+
+        with patch("main.plt.close", side_effect=lambda _: steps.append("close plot")) as close:
+            app._ao_fechar()
+
+        self.assertEqual(
+            steps,
+            [
+                "unregister",
+                "cancel",
+                "stop motor",
+                "close plot",
+                "close plot",
+                "close plot",
+                "destroy",
+            ],
+        )
+        close.assert_has_calls([
+            call(app.fig),
+            call(app.fig_backtest),
+            call(app.fig_patrimonio),
+        ])
+        app._ao_fechar()
+        app.destroy.assert_called_once()
+
+    def test_legacy_json_files_are_moved_into_data_without_modification(self):
+        with tempfile.TemporaryDirectory() as directory:
+            names = (
+                "state.json",
+                "history.json",
+                "trade_transaction.json",
+                "cash_flow.json",
+                "equity_history.json",
+            )
+            expected = {}
+            for name in names:
+                contents = f'{{"file": "{name}"}}'.encode("utf-8")
+                with open(os.path.join(directory, name), "wb") as file:
+                    file.write(contents)
+                expected[name] = contents
+
+            paths = {
+                "state_file": os.path.join("data", "state.json"),
+                "history_file": os.path.join("data", "history.json"),
+                "trade_journal_file": os.path.join("data", "trade_transaction.json"),
+                "cash_flow_file": os.path.join("data", "cash_flow.json"),
+                "equity_file": os.path.join("data", "equity_history.json"),
+            }
+            with (
+                patch.dict("config.CONFIG", paths),
+                patch("main.os.getcwd", return_value=directory),
+            ):
+                MotorSimulador._migrar_arquivos_legados()
+
+            for name, contents in expected.items():
+                with self.subTest(name=name):
+                    target = os.path.join(directory, "data", name)
+                    self.assertFalse(os.path.exists(os.path.join(directory, name)))
+                    with open(target, "rb") as file:
+                        self.assertEqual(file.read(), contents)
+
+    def test_legacy_json_conflict_preserves_both_copies(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = os.path.join(directory, "data")
+            os.makedirs(data_dir)
+            legacy = os.path.join(directory, "state.json")
+            current = os.path.join(data_dir, "state.json")
+            with open(legacy, "w", encoding="utf-8") as file:
+                file.write('{"source":"legacy"}')
+            with open(current, "w", encoding="utf-8") as file:
+                file.write('{"source":"data"}')
+
+            with (
+                patch.dict(
+                    "config.CONFIG",
+                    {
+                        "state_file": os.path.join("data", "state.json"),
+                        "history_file": os.path.join("data", "history.json"),
+                        "trade_journal_file": os.path.join("data", "trade_transaction.json"),
+                        "cash_flow_file": os.path.join("data", "cash_flow.json"),
+                        "equity_file": os.path.join("data", "equity_history.json"),
+                    },
+                ),
+                patch("main.os.getcwd", return_value=directory),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "dados diferentes"):
+                    MotorSimulador._migrar_arquivos_legados()
+
+            self.assertTrue(os.path.exists(legacy))
+            self.assertTrue(os.path.exists(current))
 
     def test_terminal_buy_and_hold_needs_an_initial_price(self):
         output = StringIO()

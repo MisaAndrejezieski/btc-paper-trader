@@ -36,7 +36,7 @@ class CashFlow:
 
 @dataclass
 class Estado:
-    """Estado atual do simulador (persistido em state.json)."""
+    """Estado atual do simulador (persistido em data/state.json)."""
     capital_brl: float = 0.0
     capital_btc: float = 0.0
     preco_medio_brl: float = 0.0

@@ -25,7 +25,7 @@ movimentações manuais de saldo, separadas do histórico de trades.
   buy-and-hold, incluindo a taxa de operação configurada. Resultados passados
   não prevêem resultados futuros; a disponibilidade depende da CoinGecko.
 - **Patrimônio e benchmark:** a curva é registrada a partir da instalação desta
-  versão em `equity_history.json`, com ajustes para depósitos e saques. O
+  versão em `data/equity_history.json`, com ajustes para depósitos e saques. O
   benchmark buy-and-hold acompanha os mesmos fluxos, comprando/vendendo BTC na
   cotação registrada. Dados anteriores não são reconstruídos.
 - **Métricas de risco:** drawdown e Sharpe são calculados sobre a série de
@@ -42,12 +42,16 @@ movimentações manuais de saldo, separadas do histórico de trades.
 - **Operação manual:** informe um valor em reais para comprar ou uma quantidade
   de BTC para vender. As ordens são simuladas e incluem a taxa configurada.
 - **Fluxo de caixa:** registre depósitos e saques manualmente. Eles alteram o
-  saldo em BRL, não são trades, não pagam taxa e ficam em `cash_flow.json`.
+  saldo em BRL, não são trades, não pagam taxa e ficam em `data/cash_flow.json`.
   Saques só podem usar o saldo disponível em reais; BTC não é vendido
   automaticamente para cobrir um saque.
+- **Arquivos de dados:** estado, histórico, fluxo de caixa, patrimônio, diário
+  de recuperação e cache de cotação ficam centralizados em `data/`. Na primeira
+  inicialização, arquivos legados da raiz são migrados sem alterar seu conteúdo;
+  conflitos entre cópias interrompem a abertura sem sobrescrever os dados.
 - **Integridade dos dados:** estado, trades, fluxo de caixa e patrimônio são
   salvos por substituição atômica para evitar arquivos JSON truncados. Trades
-  usam `trade_transaction.json` como diário temporário: se o app for
+  usam `data/trade_transaction.json` como diário temporário: se o app for
   interrompido entre salvar o saldo e o histórico, a transação é recuperada ao
   reiniciar. Se um arquivo salvo estiver inválido, o app interrompe a abertura
   e informa o caminho, sem substituí-lo por dados vazios.

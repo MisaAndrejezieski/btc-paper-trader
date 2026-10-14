@@ -3,6 +3,11 @@ Configurações globais do simulador.
 Todos os parâmetros ajustáveis ficam aqui, centralizados.
 """
 
+import os
+
+
+DATA_DIR = "data"
+
 CONFIG = {
     # --- Capital inicial ---
     "capital_inicial_brl": 0.00,
@@ -31,10 +36,10 @@ CONFIG = {
     "taxa_operacao_pct": 0.1,
 
     # --- Arquivos ---
-    "state_file": "state.json",
-    "history_file": "history.json",
-    "trade_journal_file": "trade_transaction.json",
-    "cash_flow_file": "cash_flow.json",
-    "equity_file": "equity_history.json",
-    "cache_dir": "data",
+    "state_file": os.path.join(DATA_DIR, "state.json"),
+    "history_file": os.path.join(DATA_DIR, "history.json"),
+    "trade_journal_file": os.path.join(DATA_DIR, "trade_transaction.json"),
+    "cash_flow_file": os.path.join(DATA_DIR, "cash_flow.json"),
+    "equity_file": os.path.join(DATA_DIR, "equity_history.json"),
+    "cache_dir": DATA_DIR,
 }
