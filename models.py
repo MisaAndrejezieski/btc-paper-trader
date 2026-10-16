@@ -3,9 +3,9 @@ Modelos de dados do simulador.
 Dataclasses representam o estado e os eventos.
 """
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
-from typing import List
+from typing import Any, List
 
 
 @dataclass
@@ -55,4 +55,13 @@ class Estado:
 
     @classmethod
     def from_dict(cls, d: dict) -> "Estado":
-        return cls(**d)
+        if not isinstance(d, dict):
+            raise TypeError("O estado precisa ser um dicionário.")
+        payload = {
+            field_def.name: d.get(field_def.name, field_def.default)
+            for field_def in fields(cls)
+        }
+        for key, value in d.items():
+            if key in payload:
+                payload[key] = value
+        return cls(**payload)

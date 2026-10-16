@@ -87,6 +87,8 @@ def executar_venda(
     estado: Estado, preco_brl: float, percentual: float, motivo: str
 ) -> Trade | None:
     """Executa uma venda simulada e atualiza o estado."""
+    if not isfinite(percentual) or percentual <= 0 or percentual > 100:
+        raise ValueError("O percentual da venda precisa estar entre 0 e 100%.")
     quantidade = estado.capital_btc * (percentual / 100)
     if quantidade <= 0:
         return None

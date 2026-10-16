@@ -2,6 +2,10 @@
 Imprime o relatório do simulador no terminal.
 """
 
+import argparse
+import json
+import os
+
 from models import Estado
 
 
@@ -73,3 +77,29 @@ def imprimir_snapshot(
     print(f"  Trades:               {estado.total_compras} compras / {estado.total_vendas} vendas")
     print(f"  Taxas pagas:          R$ {_formatar_reais(estado.total_taxas_brl):>12}")
     print("=" * 60)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Exibe um snapshot do BTC Paper Trader.")
+    parser.add_argument("--price", type=float, required=True, help="Preço atual do BTC em BRL.")
+    parser.add_argument("--initial-price", type=float, help="Preço inicial para comparação buy-and-hold.")
+    parser.add_argument("--state", default=os.path.join("data", "state.json"))
+    parser.add_argument("--cash-flow", default=os.path.join("data", "cash_flow.json"))
+    args = parser.parse_args()
+
+    with open(args.state, "r", encoding="utf-8") as file:
+        estado = Estado.from_dict(json.load(file))
+    fluxo_caixa = []
+    if os.path.exists(args.cash_flow):
+        with open(args.cash_flow, "r", encoding="utf-8") as file:
+            fluxo_caixa = json.load(file)
+    imprimir_snapshot(
+        estado,
+        args.price,
+        preco_inicial_brl=args.initial_price,
+        fluxo_caixa=fluxo_caixa,
+    )
+
+
+if __name__ == "__main__":
+    main()

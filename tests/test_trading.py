@@ -8,6 +8,7 @@ from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
 from io import StringIO
+from tkinter import TclError
 from unittest.mock import Mock, call, patch
 
 from fetcher import Cotacao, buscar_cotacao_btc_brl
@@ -20,7 +21,7 @@ from main import (
 )
 from models import Estado
 from market_insights import analisar_feed_analistas, calcular_previsao
-from report import imprimir_snapshot
+from scripts.report_cli import imprimir_snapshot
 from simulator import (
     executar_compra,
     executar_venda,
@@ -93,6 +94,18 @@ class SimulatorTests(unittest.TestCase):
             )
             self.assertEqual(motor.historico, [])
             self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
+    def test_motor_start_failure_sets_error_state(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.thread = Mock()
+        motor.thread.is_alive.return_value = False
+        motor.thread.start.side_effect = OSError("thread indisponível")
+
+        with self.assertRaisesRegex(RuntimeError, "thread indisponível"):
+            motor.iniciar()
+
+        self.assertIn("thread indisponível", motor.erro_persistencia)
+        motor.thread.start.assert_called_once_with()
 
     def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
         for operacao in (registrar_deposito, registrar_saque):
@@ -462,6 +475,28 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(create_label.call_args.kwargs["cursor"], "hand2")
         open_url.assert_called_once_with("https://example.com/article")
 
+    def test_trade_notification_recreates_toast_after_tcl_error(self):
+        app = AppBTC.__new__(AppBTC)
+        app.lbl_toast = Mock()
+        app.lbl_toast.place.side_effect = TclError("widget foi destruído")
+        app._toast_after_id = None
+        app.bell = Mock()
+        app.after = Mock(return_value="after#toast")
+        stale_toast = app.lbl_toast
+        fresh_toast = Mock()
+
+        with patch("main.ctk.CTkLabel", return_value=fresh_toast) as create_label:
+            app._mostrar_notificacao_trade({
+                "tipo": "COMPRA",
+                "valor_brl": 100,
+                "motivo": "compra_extra",
+            })
+
+        create_label.assert_called_once()
+        self.assertIs(app.lbl_toast, fresh_toast)
+        stale_toast.place.assert_called_once()
+        fresh_toast.place.assert_called_once_with(relx=0.98, rely=0.02, anchor="ne")
+
     def test_close_cancels_callbacks_on_their_registering_widgets(self):
         app = AppBTC.__new__(AppBTC)
         app.tk = Mock()
@@ -571,7 +606,7 @@ class SimulatorTests(unittest.TestCase):
             }
             with (
                 patch.dict("config.CONFIG", paths),
-                patch("main.os.getcwd", return_value=directory),
+                patch("main.__file__", os.path.join(directory, "main.py")),
             ):
                 MotorSimulador._migrar_arquivos_legados()
 
@@ -604,7 +639,7 @@ class SimulatorTests(unittest.TestCase):
                         "equity_file": os.path.join("data", "equity_history.json"),
                     },
                 ),
-                patch("main.os.getcwd", return_value=directory),
+                patch("main.__file__", os.path.join(directory, "main.py")),
             ):
                 with self.assertRaisesRegex(RuntimeError, "dados diferentes"):
                     MotorSimulador._migrar_arquivos_legados()

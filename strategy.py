@@ -4,6 +4,8 @@ Função pura: recebe estado + preço, devolve a ação.
 Isso facilita testes e troca de estratégia depois.
 """
 
+from math import isfinite
+
 from config import CONFIG
 from models import Estado
 
@@ -16,6 +18,9 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
       {"acao": "VENDA", "percentual": 50, "motivo": "stop_loss"}
       {"acao": "NADA"}
     """
+    if not isfinite(preco_brl) or preco_brl <= 0:
+        raise ValueError("O preço precisa ser maior que zero.")
+
     variacao = (
         (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
         if estado.preco_medio_brl > 0 else 0.0

@@ -99,7 +99,7 @@ class MotorSimulador:
 
     @staticmethod
     def _migrar_arquivos_legados():
-        diretorio = os.getcwd()
+        diretorio = os.path.dirname(os.path.abspath(__file__))
         for config_key in (
             "state_file",
             "history_file",
@@ -417,7 +417,7 @@ class MotorSimulador:
         if atualizado_em.tzinfo is None:
             atualizado_em = atualizado_em.replace(tzinfo=timezone.utc)
         idade = (datetime.now(timezone.utc) - atualizado_em.astimezone(timezone.utc)).total_seconds()
-        if idade < 0 or idade > CONFIG["cotacao_max_age_segundos"]:
+        if idade < 0 or idade > CONFIG.get("cotacao_max_age_segundos", 600):
             self.preco_atualizado = False
             raise RuntimeError(
                 "A cotação está desatualizada; aguarde uma nova cotação online."
@@ -490,7 +490,11 @@ class MotorSimulador:
 
     def iniciar(self):
         if not self.thread.is_alive():
-            self.thread.start()
+            try:
+                self.thread.start()
+            except Exception as exc:
+                self.erro_persistencia = f"Não foi possível iniciar o motor: {exc}"
+                raise RuntimeError(self.erro_persistencia) from exc
 
     def parar(self):
         self.rodando = False
@@ -1313,8 +1317,8 @@ class AppBTC(ctk.CTk):
         )
 
     def _mostrar_notificacao_trade(self, trade: dict):
-        if not hasattr(self, "lbl_toast"):
-            self.lbl_toast = ctk.CTkLabel(
+        def criar_toast():
+            return ctk.CTkLabel(
                 self,
                 text="",
                 fg_color=CORES["bg_destaque"],
@@ -1322,13 +1326,20 @@ class AppBTC(ctk.CTk):
                 corner_radius=8,
                 font=FONTE_LABEL,
             )
+
+        if not hasattr(self, "lbl_toast"):
+            self.lbl_toast = criar_toast()
         tipo = str(trade.get("tipo", "trade")).upper()
         valor = float(trade.get("valor_brl", 0) or 0)
         motivo = str(trade.get("motivo", "")).replace("_", " ")
-        self.lbl_toast.configure(
-            text=f"  🔔 {tipo} automática · {motivo} · R$ {formatar_reais(valor)}  "
-        )
-        self.lbl_toast.place(relx=0.98, rely=0.02, anchor="ne")
+        texto = f"  🔔 {tipo} automática · {motivo} · R$ {formatar_reais(valor)}  "
+        try:
+            self.lbl_toast.configure(text=texto)
+            self.lbl_toast.place(relx=0.98, rely=0.02, anchor="ne")
+        except TclError:
+            self.lbl_toast = criar_toast()
+            self.lbl_toast.configure(text=texto)
+            self.lbl_toast.place(relx=0.98, rely=0.02, anchor="ne")
         self.bell()
         if self._toast_after_id is not None:
             self.after_cancel(self._toast_after_id)
