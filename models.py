@@ -4,7 +4,6 @@ Dataclasses representam o estado e os eventos.
 """
 
 from dataclasses import asdict, dataclass, fields
-from datetime import datetime
 
 
 @dataclass

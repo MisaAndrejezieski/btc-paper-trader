@@ -52,7 +52,6 @@ from simulator import (
 from strategy import decidir_acao
 from trading_analytics import (
     calcular_metricas_risco,
-    calcular_pnl_realizado,
     gerar_csv_trades,
 )
 from theme import (CORES, FONTE_LABEL, FONTE_PEQUENA, FONTE_SUBTITULO,
