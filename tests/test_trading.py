@@ -107,6 +107,47 @@ class SimulatorTests(unittest.TestCase):
         self.assertIn("thread indisponível", motor.erro_persistencia)
         motor.thread.start.assert_called_once_with()
 
+    def test_concurrent_manual_buys_do_not_corrupt_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "trade.json"),
+                "cash_flow_file": os.path.join(directory, "cash_flow.json"),
+                "equity_file": os.path.join(directory, "equity.json"),
+            }
+            with (
+                patch.dict("config.CONFIG", files),
+                patch("main.__file__", os.path.join(directory, "main.py")),
+            ):
+                motor = MotorSimulador()
+                motor.estado.capital_brl = 100_000
+                motor.preco_atual = 200_000
+                motor.preco_atualizado = True
+                motor.ultimo_update = datetime.now(timezone.utc)
+                barrier = threading.Barrier(10)
+                errors = []
+
+                def buy():
+                    try:
+                        barrier.wait()
+                        motor.comprar_manual(1_000)
+                    except Exception as exc:
+                        errors.append(exc)
+
+                threads = [threading.Thread(target=buy) for _ in range(10)]
+                for thread in threads:
+                    thread.start()
+                for thread in threads:
+                    thread.join()
+
+                self.assertEqual(errors, [])
+                self.assertEqual(motor.estado.total_compras, 10)
+                self.assertAlmostEqual(motor.estado.capital_brl, 90_000)
+                self.assertEqual(len(motor.historico), 10)
+                self.assertEqual(motor.erro_persistencia, "")
+                self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
     def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
         for operacao in (registrar_deposito, registrar_saque):
             for valor in (0, -1, math.inf, math.nan):
@@ -163,6 +204,37 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(estado.ultimo_preco_compra_brl, 0)
         self.assertFalse(estado.take_profit_executado)
         self.assertFalse(estado.stop_loss_executado)
+
+    def test_state_from_dict_ignores_unknown_fields(self):
+        # Extra keys from newer/older saved formats are ignored for compatibility.
+        estado = Estado.from_dict({
+            "capital_brl": 1_000,
+            "unknown_legacy_field": "ignored",
+        })
+
+        self.assertEqual(estado.capital_brl, 1_000)
+        self.assertFalse(hasattr(estado, "unknown_legacy_field"))
+
+    def test_equity_history_is_capped_at_15000_points(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = Estado(capital_brl=100)
+        motor.equity_history = []
+        motor._pending_equity_flow = 0.0
+        motor.erro_patrimonio = ""
+        motor._salvar_equity = lambda: None
+        start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+        for index in range(20_000):
+            motor._registrar_amostra_equity(
+                100,
+                start + timedelta(hours=index),
+            )
+
+        self.assertEqual(len(motor.equity_history), 15_000)
+        self.assertEqual(
+            motor.equity_history[0]["timestamp"],
+            (start + timedelta(hours=5_000)).isoformat(),
+        )
 
     def test_strategy_does_not_buy_periodically_from_existing_balance(self):
         self.estado.capital_btc = 0.01
@@ -436,6 +508,69 @@ class SimulatorTests(unittest.TestCase):
         self.assertFalse(motor.preco_atualizado)
         self.assertEqual(motor.ultimo_erro, "offline")
 
+    def test_loop_recovers_quote_after_a_transient_failure(self):
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.estado = Estado()
+        motor.historico = []
+        motor.fluxo_caixa = []
+        motor.equity_history = []
+        motor._pending_equity_flow = 0.0
+        motor.erro_patrimonio = ""
+        motor.erro_persistencia = ""
+        motor.preco_atual = None
+        motor.fonte_preco = ""
+        motor.preco_atualizado = False
+        motor.ultimo_update = None
+        motor.ultimo_erro = ""
+        motor.historico_cotacao = []
+        motor.previsao_dia = []
+        motor.sentimento_analistas = 0.0
+        motor.artigos_analistas = []
+        motor.atualizado_mercado = None
+        motor.atualizado_analistas = datetime.now(timezone.utc)
+        motor.erro_analise = ""
+        motor.rodando = True
+        motor.lock = threading.Lock()
+        quote = Cotacao(
+            200_000,
+            "Teste",
+            datetime.now(timezone.utc),
+            True,
+        )
+        sleeps = 0
+
+        def stop_after_second_iteration(_):
+            nonlocal sleeps
+            sleeps += 1
+            if sleeps == 2:
+                motor.rodando = False
+
+        with tempfile.TemporaryDirectory() as directory:
+            files = {
+                "state_file": os.path.join(directory, "state.json"),
+                "history_file": os.path.join(directory, "history.json"),
+                "trade_journal_file": os.path.join(directory, "trade.json"),
+                "cash_flow_file": os.path.join(directory, "cash_flow.json"),
+                "equity_file": os.path.join(directory, "equity.json"),
+            }
+            with (
+                patch.dict(
+                    "config.CONFIG",
+                    {**files, "intervalo_loop_minutos": 1 / 60},
+                ),
+                patch(
+                    "main.buscar_cotacao_btc_brl",
+                    side_effect=[RuntimeError("offline"), quote],
+                ) as fetch_quote,
+                patch("main.buscar_historico_btc_brl", return_value=[]),
+                patch("main.time.sleep", side_effect=stop_after_second_iteration),
+            ):
+                motor._loop()
+
+        self.assertEqual(fetch_quote.call_count, 2)
+        self.assertTrue(motor.preco_atualizado)
+        self.assertEqual(motor.ultimo_erro, "")
+
     def test_local_time_and_brazilian_currency_format(self):
         local = AppBTC._para_horario_local("2026-10-13T08:00:00+00:00")
         self.assertEqual(local.strftime("%H:%M"), "05:00")
@@ -453,6 +588,11 @@ class SimulatorTests(unittest.TestCase):
             AppBTC._ler_numero("1.00.000", "brl")
         with self.assertRaisesRegex(ValueError, "BTC"):
             AppBTC._ler_numero("1.000,000", "btc")
+
+    def test_amount_parser_rejects_american_format(self):
+        # BRL parser rejects US-style "1,234.56" instead of guessing its separators.
+        with self.assertRaisesRegex(ValueError, "casas decimais|reais válido"):
+            AppBTC._ler_numero("1,234.56", "brl")
 
     def test_news_link_uses_wrapping_label_and_opens_url_on_click(self):
         app = AppBTC.__new__(AppBTC)
