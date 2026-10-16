@@ -845,8 +845,7 @@ class AppBTC(ctk.CTk):
         if capital <= 0:
             self.lbl_backtest_status.configure(
                 text=(
-                    "Backtest indisponível: aguarde cotação online "
-                    "e patrimônio válido."
+                    "Backtest indisponível: aguarde cotação online e patrimônio válido."
                 ),
                 text_color=CORES["amarelo_pastel"],
             )

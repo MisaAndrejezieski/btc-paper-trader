@@ -64,21 +64,25 @@ def imprimir_snapshot(
     print(f"  Saques totais:        R$ {_formatar_reais(saques):>12}")
     print(f"  Capital líquido:      R$ {_formatar_reais(capital_aportado):>12}")
     print(
-        f"  Lucro/prejuízo:       R$ {_formatar_reais(lucro, sinal=True):>12}  ({lucro_pct:+.2f}%)"
+        f"  Lucro/prejuízo:       R$ {_formatar_reais(lucro, sinal=True):>12}  "
+        f"({lucro_pct:+.2f}%)"
     )
     if lucro_hold is None:
         print("  Buy-and-hold:         indisponível (informe o preço inicial)")
     else:
         print(
-            f"  Buy-and-hold:         R$ {_formatar_reais(lucro_hold, sinal=True):>12}  "
+            "  Buy-and-hold:         R$ "
+            f"{_formatar_reais(lucro_hold, sinal=True):>12}  "
             f"({lucro_hold_pct:+.2f}%)"
         )
     print("-" * 60)
     print(
-        f"  Preço médio:          R$ {_formatar_reais(estado.preco_medio_brl):>12}  ({var_pm:+.2f}%)"
+        f"  Preço médio:          R$ {_formatar_reais(estado.preco_medio_brl):>12}  "
+        f"({var_pm:+.2f}%)"
     )
     print(
-        f"  Trades:               {estado.total_compras} compras / {estado.total_vendas} vendas"
+        f"  Trades:               {estado.total_compras} compras / "
+        f"{estado.total_vendas} vendas"
     )
     print(f"  Taxas pagas:          R$ {_formatar_reais(estado.total_taxas_brl):>12}")
     print("=" * 60)

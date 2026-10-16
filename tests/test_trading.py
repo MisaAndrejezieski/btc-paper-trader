@@ -925,13 +925,13 @@ class SimulatorTests(unittest.TestCase):
     def test_feed_includes_recent_btc_news_and_marks_analyst_views(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
         xml = f"""<?xml version="1.0"?>
-        <rss><channel>
+        <rss xmlns:dc="http://purl.org/dc/elements/1.1/"><channel>
           <item>
             <title>Bitcoin analyst expects a rally</title>
             <link>https://example.com/bitcoin-outlook</link>
             <description><![CDATA[Analyst sees upside for Bitcoin.]]></description>
             <pubDate>{format_datetime(now)}</pubDate>
-            <dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">Jane Analyst</dc:creator>
+            <dc:creator>Jane Analyst</dc:creator>
           </item>
           <item>
             <title>Bitcoin price update</title>

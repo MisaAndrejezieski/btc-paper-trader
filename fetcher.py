@@ -251,9 +251,10 @@ if __name__ == "__main__":
         .replace(".", ",")
         .replace("X", ".")
     )
+    horario_local = cotacao.timestamp.astimezone(
+        ZoneInfo("America/Sao_Paulo")
+    ).strftime("%d/%m/%Y %H:%M:%S")
     print(
-        f"BTC {status} ({cotacao.fonte}, "
-        f"{cotacao.timestamp.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M:%S')}"
-        f"): "
+        f"BTC {status} ({cotacao.fonte}, {horario_local}): "
         f"R$ {preco_formatado}"
     )
