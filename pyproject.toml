@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "btc-paper-trader"
+version = "0.1.0"
+description = "Simulador de paper trading de Bitcoin com interface desktop."
+authors = [
+    { name = "MisaAndrejezieski" },
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests==2.32.3",
+    "customtkinter==5.2.2",
+    "matplotlib==3.9.2",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "ruff>=0.11",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+exclude = [
+    ".git",
+    ".venv",
+    "build",
+    "dist",
+    "data",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+files = [
+    "backtest.py",
+    "config.py",
+    "fetcher.py",
+    "formatting.py",
+    "gui.py",
+    "main.py",
+    "market_insights.py",
+    "models.py",
+    "motor.py",
+    "simulator.py",
+    "strategy.py",
+    "theme.py",
+    "trading_analytics.py",
+]
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+

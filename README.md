@@ -1,5 +1,7 @@
 # BTC Paper Trader
 
+[![CI status](https://img.shields.io/badge/CI-not_configured-lightgrey)](#)
+
 Simulador de paper trading de Bitcoin em Python. Começa com saldo zerado;
 adicione saldo fictício manualmente antes de realizar a primeira compra.
 Acompanha o preço real do BTC e simula trades automáticos de compra extra,
