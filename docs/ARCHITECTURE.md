@@ -3,7 +3,10 @@
 ## Layers
 
 ```text
-main.py (GUI + orchestration / MotorSimulador)
+main.py (application entry point)
+  ├── gui.py ──> AppBTC and Tkinter/CustomTkinter interface
+  │                 │
+  │                 └── motor.py ──> MotorSimulador / orchestration
   ├── fetcher.py ──> CoinGecko / Binance / local quote cache
   ├── strategy.py ──> decision from Estado + current BRL/BTC price
   ├── simulator.py ──> applies decision to Estado and creates Trade/CashFlow
@@ -13,10 +16,11 @@ main.py (GUI + orchestration / MotorSimulador)
                          └── JSON files under data/
 ```
 
-`main.py` owns application orchestration and the Tkinter UI. The strategy is a
-decision layer; it does not mutate state or perform I/O. The simulator applies
-manual and automatic operations to in-memory models, while persistence remains
-the responsibility of `MotorSimulador`.
+`main.py` is the application entry point. `gui.py` owns the Tkinter UI, and
+`motor.py` owns application orchestration and persistence through
+`MotorSimulador`. The strategy is a decision layer; it does not mutate state or
+perform I/O. The simulator applies manual and automatic operations to
+in-memory models.
 
 ## Market and trade flow
 

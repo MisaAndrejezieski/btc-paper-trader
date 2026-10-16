@@ -16,13 +16,9 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
 from fetcher import Cotacao, buscar_cotacao_btc_brl
-from main import (
-    AppearanceModeTracker,
-    AppBTC,
-    MotorSimulador,
-    ScalingTracker,
-    formatar_reais,
-)
+from formatting import formatar_reais
+from gui import AppBTC, AppearanceModeTracker, ScalingTracker
+from motor import MotorSimulador
 from models import Estado
 from market_insights import analisar_feed_analistas, calcular_previsao
 from scripts.report_cli import imprimir_snapshot
@@ -122,7 +118,7 @@ class SimulatorTests(unittest.TestCase):
             }
             with (
                 patch.dict("config.CONFIG", files),
-                patch("main.__file__", os.path.join(directory, "main.py")),
+                patch("motor.__file__", os.path.join(directory, "main.py")),
             ):
                 motor = MotorSimulador()
                 motor.estado.capital_brl = 100_000
@@ -182,8 +178,8 @@ class SimulatorTests(unittest.TestCase):
 
         with (
             patch.dict("config.CONFIG", {"equity_debounce_segundos": 30}),
-            patch("main.threading.Timer", FakeTimer),
-            patch("main.time.monotonic", side_effect=[0.0, 5.0, 10.0, 41.0]),
+            patch("motor.threading.Timer", FakeTimer),
+            patch("motor.time.monotonic", side_effect=[0.0, 5.0, 10.0, 41.0]),
         ):
             for value in range(3):
                 motor.equity_history = [{"value": value}]
@@ -526,10 +522,10 @@ class SimulatorTests(unittest.TestCase):
             )
             with (
                 patch.dict("config.CONFIG", {**files, "intervalo_loop_minutos": 1}),
-                patch("main.buscar_cotacao_btc_brl", return_value=quote),
-                patch("main.buscar_historico_btc_brl", return_value=[]),
+                patch("motor.buscar_cotacao_btc_brl", return_value=quote),
+                patch("motor.buscar_historico_btc_brl", return_value=[]),
                 patch(
-                    "main.time.sleep",
+                    "motor.time.sleep",
                     side_effect=lambda _: setattr(motor, "rodando", False),
                 ),
             ):
@@ -599,9 +595,9 @@ class SimulatorTests(unittest.TestCase):
         motor.preco_atualizado = True
 
         with (
-            patch("main.buscar_cotacao_btc_brl", side_effect=RuntimeError("offline")),
+            patch("motor.buscar_cotacao_btc_brl", side_effect=RuntimeError("offline")),
             patch(
-                "main.time.sleep",
+                "motor.time.sleep",
                 side_effect=lambda _: setattr(motor, "rodando", False),
             ),
         ):
@@ -661,11 +657,11 @@ class SimulatorTests(unittest.TestCase):
                     {**files, "intervalo_loop_minutos": 1 / 60},
                 ),
                 patch(
-                    "main.buscar_cotacao_btc_brl",
+                    "motor.buscar_cotacao_btc_brl",
                     side_effect=[RuntimeError("offline"), quote],
                 ) as fetch_quote,
-                patch("main.buscar_historico_btc_brl", return_value=[]),
-                patch("main.time.sleep", side_effect=stop_after_second_iteration),
+                patch("motor.buscar_historico_btc_brl", return_value=[]),
+                patch("motor.time.sleep", side_effect=stop_after_second_iteration),
             ):
                 motor._loop()
 
@@ -703,8 +699,8 @@ class SimulatorTests(unittest.TestCase):
         label = Mock()
 
         with (
-            patch("main.ctk.CTkLabel", return_value=label) as create_label,
-            patch("main.webbrowser.open") as open_url,
+            patch("gui.ctk.CTkLabel", return_value=label) as create_label,
+            patch("gui.webbrowser.open") as open_url,
         ):
             result = app._criar_link_noticia(
                 Mock(), "Notícia de exemplo", "https://example.com/article", 0
@@ -727,7 +723,7 @@ class SimulatorTests(unittest.TestCase):
         stale_toast = app.lbl_toast
         fresh_toast = Mock()
 
-        with patch("main.ctk.CTkLabel", return_value=fresh_toast) as create_label:
+        with patch("gui.ctk.CTkLabel", return_value=fresh_toast) as create_label:
             app._mostrar_notificacao_trade({
                 "tipo": "COMPRA",
                 "valor_brl": 100,
@@ -800,7 +796,7 @@ class SimulatorTests(unittest.TestCase):
         app.motor.parar.side_effect = lambda: steps.append("stop motor")
         app.destroy = Mock(side_effect=lambda: steps.append("destroy"))
 
-        with patch("main.plt.close", side_effect=lambda _: steps.append("close plot")) as close:
+        with patch("gui.plt.close", side_effect=lambda _: steps.append("close plot")) as close:
             app._ao_fechar()
 
         self.assertEqual(
@@ -848,7 +844,7 @@ class SimulatorTests(unittest.TestCase):
             }
             with (
                 patch.dict("config.CONFIG", paths),
-                patch("main.__file__", os.path.join(directory, "main.py")),
+                patch("motor.__file__", os.path.join(directory, "main.py")),
             ):
                 MotorSimulador._migrar_arquivos_legados()
 
@@ -881,7 +877,7 @@ class SimulatorTests(unittest.TestCase):
                         "equity_file": os.path.join("data", "equity_history.json"),
                     },
                 ),
-                patch("main.__file__", os.path.join(directory, "main.py")),
+                patch("motor.__file__", os.path.join(directory, "main.py")),
             ):
                 with self.assertRaisesRegex(RuntimeError, "dados diferentes"):
                     MotorSimulador._migrar_arquivos_legados()

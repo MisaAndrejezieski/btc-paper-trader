@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from backtest import simular_backtest
-from main import MotorSimulador
+from motor import MotorSimulador
 from market_insights import buscar_historico_btc_brl_periodo
 from models import Estado
 from trading_analytics import (

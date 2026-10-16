@@ -8,7 +8,8 @@ movimentações manuais de saldo, separadas do histórico de trades.
 
 ## Arquitetura
 
-- `main.py` coordena a interface, o ciclo de mercado e a persistência.
+- `main.py` inicia o aplicativo; `gui.py` contém a interface e `motor.py`
+  coordena o ciclo de mercado e a persistência.
 - `fetcher.py` consulta fontes online e o cache local de cotação.
 - `strategy.py` decide a ação; `simulator.py` aplica-a ao estado em memória.
 - `models.py` define estado, trades e eventos de fluxo de caixa.
