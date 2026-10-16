@@ -112,13 +112,13 @@ class AnalyticsTests(unittest.TestCase):
         motor.estado = Estado(capital_brl=1_000)
         motor.equity_history = []
         motor._pending_equity_flow = 0.0
-        motor._salvar_historico_patrimonio = lambda: None
+        motor._salvar_equity = lambda: None
 
-        motor._registrar_patrimonio(100, self.start, force=True)
+        motor._registrar_amostra_equity(100, self.start, force_sample=True)
         motor.estado.capital_brl += 100
         motor._pending_equity_flow = 100
-        motor._registrar_patrimonio(
-            110, self.start + timedelta(hours=1), force=True
+        motor._registrar_amostra_equity(
+            110, self.start + timedelta(hours=1), force_sample=True
         )
 
         self.assertAlmostEqual(motor.equity_history[-1]["nav"], 1.0)

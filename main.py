@@ -77,7 +77,7 @@ class MotorSimulador:
         self.estado = self._carregar_estado()
         self.historico = self._carregar_historico()
         self.fluxo_caixa = self._carregar_fluxo_caixa()
-        self.equity_history = self._carregar_historico_patrimonio()
+        self.equity_history = self._carregar_equity()
         self._pending_equity_flow = 0.0
         self.erro_patrimonio = ""
         self.erro_persistencia = ""
@@ -179,7 +179,7 @@ class MotorSimulador:
                 f"o arquivo foi preservado: {exc}"
             ) from exc
 
-    def _carregar_historico_patrimonio(self):
+    def _carregar_equity(self):
         path = CONFIG["equity_file"]
         if not os.path.exists(path):
             return []
@@ -273,7 +273,7 @@ class MotorSimulador:
             CONFIG["cash_flow_file"], self.fluxo_caixa, ensure_ascii=False
         )
 
-    def _salvar_historico_patrimonio(self):
+    def _salvar_equity(self):
         self._salvar_json_atomico(
             CONFIG["equity_file"], self.equity_history, ensure_ascii=False
         )
@@ -339,14 +339,20 @@ class MotorSimulador:
                 "para recuperar os arquivos antes de operar novamente."
             )
 
-    def _registrar_patrimonio(self, preco: float, timestamp, force: bool = False):
+    def _registrar_amostra_equity(
+        self,
+        preco: float,
+        timestamp,
+        force_sample: bool = False,
+    ):
+        """Registra uma amostra, mesmo que já exista outra no mesmo minuto."""
         if not hasattr(self, "equity_history") or not isfinite(preco) or preco <= 0:
             return
         now = timestamp if isinstance(timestamp, datetime) else datetime.now(timezone.utc)
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
         now = now.astimezone(timezone.utc)
-        if self.equity_history and not force:
+        if self.equity_history and not force_sample:
             anterior = datetime.fromisoformat(self.equity_history[-1]["timestamp"])
             if anterior.tzinfo is None:
                 anterior = anterior.replace(tzinfo=timezone.utc)
@@ -354,7 +360,7 @@ class MotorSimulador:
                 minute=0, second=0, microsecond=0
             ):
                 if self.erro_patrimonio:
-                    self._persistir_historico_patrimonio()
+                    self._persistir_equity()
                 return
 
         equity = self.estado.capital_brl + self.estado.capital_btc * preco
@@ -390,11 +396,11 @@ class MotorSimulador:
         })
         self.equity_history = self.equity_history[-15000:]
         self._pending_equity_flow = 0.0
-        self._persistir_historico_patrimonio()
+        self._persistir_equity()
 
-    def _persistir_historico_patrimonio(self):
+    def _persistir_equity(self):
         try:
-            self._salvar_historico_patrimonio()
+            self._salvar_equity()
         except OSError as exc:
             self.erro_patrimonio = str(exc)
             print(f"[AVISO] Não foi possível salvar a curva de patrimônio: {exc}")
@@ -437,8 +443,8 @@ class MotorSimulador:
             trade = executar_compra(self.estado, preco, valor_brl, "manual")
             self._registrar_trade(trade)
             self._persistir_trade(estado_anterior, historico_anterior)
-            self._registrar_patrimonio(
-                preco, getattr(self, "ultimo_update", None), force=True
+            self._registrar_amostra_equity(
+                preco, getattr(self, "ultimo_update", None), force_sample=True
             )
             return trade
 
@@ -453,8 +459,8 @@ class MotorSimulador:
             )
             self._registrar_trade(trade)
             self._persistir_trade(estado_anterior, historico_anterior)
-            self._registrar_patrimonio(
-                preco, getattr(self, "ultimo_update", None), force=True
+            self._registrar_amostra_equity(
+                preco, getattr(self, "ultimo_update", None), force_sample=True
             )
             return trade
 
@@ -468,8 +474,10 @@ class MotorSimulador:
             self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
             self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) + valor_brl
             if getattr(self, "preco_atual", None) is not None:
-                self._registrar_patrimonio(
-                    self.preco_atual, getattr(self, "ultimo_update", None), force=True
+                self._registrar_amostra_equity(
+                    self.preco_atual,
+                    getattr(self, "ultimo_update", None),
+                    force_sample=True,
                 )
             return evento
 
@@ -483,8 +491,10 @@ class MotorSimulador:
             self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
             self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) - valor_brl
             if getattr(self, "preco_atual", None) is not None:
-                self._registrar_patrimonio(
-                    self.preco_atual, getattr(self, "ultimo_update", None), force=True
+                self._registrar_amostra_equity(
+                    self.preco_atual,
+                    getattr(self, "ultimo_update", None),
+                    force_sample=True,
                 )
             return evento
 
@@ -603,10 +613,10 @@ class MotorSimulador:
                         if trade_executado is None:
                             self._salvar_estado()
                             self._salvar_historico()
-                        self._registrar_patrimonio(
+                        self._registrar_amostra_equity(
                             cotacao.preco_brl,
                             cotacao.timestamp,
-                            force=trade_executado is not None,
+                            force_sample=trade_executado is not None,
                         )
 
             except Exception as e:

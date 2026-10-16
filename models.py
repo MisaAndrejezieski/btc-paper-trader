@@ -3,9 +3,8 @@ Modelos de dados do simulador.
 Dataclasses representam o estado e os eventos.
 """
 
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime
-from typing import Any, List
 
 
 @dataclass
