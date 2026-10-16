@@ -18,9 +18,9 @@ from matplotlib.figure import Figure
 from fetcher import Cotacao, buscar_cotacao_btc_brl
 from formatting import formatar_reais
 from gui import AppBTC, AppearanceModeTracker, ScalingTracker
-from motor import MotorSimulador
-from models import Estado
 from market_insights import analisar_feed_analistas, calcular_previsao
+from models import Estado
+from motor import MotorSimulador
 from scripts.report_cli import imprimir_snapshot
 from simulator import (
     executar_compra,
@@ -41,9 +41,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertAlmostEqual(compra.quantidade_btc, 0.0004995)
         self.assertAlmostEqual(self.estado.capital_brl, 900)
 
-        venda = executar_venda_quantidade(
-            self.estado, 220_000, 0.00025, "manual"
-        )
+        venda = executar_venda_quantidade(self.estado, 220_000, 0.00025, "manual")
         self.assertAlmostEqual(venda.valor_brl, 55)
         self.assertAlmostEqual(venda.taxa_brl, 0.055)
         self.assertAlmostEqual(self.estado.capital_brl, 954.945)
@@ -171,9 +169,7 @@ class SimulatorTests(unittest.TestCase):
         motor.equity_history = []
         saved_samples = []
         motor._salvar_equity = Mock(
-            side_effect=lambda: saved_samples.append(
-                motor.equity_history[-1]["value"]
-            )
+            side_effect=lambda: saved_samples.append(motor.equity_history[-1]["value"])
         )
 
         with (
@@ -206,10 +202,12 @@ class SimulatorTests(unittest.TestCase):
         app._cache_fluxo_key = None
         app._cache_depositos = 0.0
         app._cache_saques = 0.0
-        fluxo = CountingList([
-            {"tipo": "DEPOSITO", "valor_brl": 300},
-            {"tipo": "SAQUE", "valor_brl": 50},
-        ])
+        fluxo = CountingList(
+            [
+                {"tipo": "DEPOSITO", "valor_brl": 300},
+                {"tipo": "SAQUE", "valor_brl": 50},
+            ]
+        )
 
         self.assertEqual(app._obter_totais_fluxo_caixa(fluxo), (300, 50))
         self.assertEqual(app._obter_totais_fluxo_caixa(fluxo), (300, 50))
@@ -276,7 +274,8 @@ class SimulatorTests(unittest.TestCase):
             }
             with patch.dict("config.CONFIG", files):
                 with patch.object(
-                    motor, "_salvar_fluxo_caixa",
+                    motor,
+                    "_salvar_fluxo_caixa",
                     side_effect=OSError("disco cheio"),
                 ):
                     with self.assertRaisesRegex(OSError, "Fluxo de caixa pendente"):
@@ -305,10 +304,12 @@ class SimulatorTests(unittest.TestCase):
 
     def test_state_from_dict_ignores_unknown_fields(self):
         # Extra keys from newer/older saved formats are ignored for compatibility.
-        estado = Estado.from_dict({
-            "capital_brl": 1_000,
-            "unknown_legacy_field": "ignored",
-        })
+        estado = Estado.from_dict(
+            {
+                "capital_brl": 1_000,
+                "unknown_legacy_field": "ignored",
+            }
+        )
 
         self.assertEqual(estado.capital_brl, 1_000)
         self.assertFalse(hasattr(estado, "unknown_legacy_field"))
@@ -432,7 +433,9 @@ class SimulatorTests(unittest.TestCase):
                 self.assertFalse(os.path.exists(files["trade_journal_file"]))
 
                 motor.preco_atualizado = False
-                with self.assertRaisesRegex(RuntimeError, "cotação não está atualizada"):
+                with self.assertRaisesRegex(
+                    RuntimeError, "cotação não está atualizada"
+                ):
                     motor.comprar_manual(100)
                 self.assertEqual(len(motor.historico), 1)
 
@@ -565,8 +568,10 @@ class SimulatorTests(unittest.TestCase):
 
     def test_cached_quote_is_not_marked_as_current(self):
         cached = Cotacao(
-            400_000, "cache (CoinGecko)",
-            datetime(2026, 10, 13, tzinfo=timezone.utc), False,
+            400_000,
+            "cache (CoinGecko)",
+            datetime(2026, 10, 13, tzinfo=timezone.utc),
+            False,
         )
         with (
             patch("fetcher.buscar_coingecko", return_value=None),
@@ -724,11 +729,13 @@ class SimulatorTests(unittest.TestCase):
         fresh_toast = Mock()
 
         with patch("gui.ctk.CTkLabel", return_value=fresh_toast) as create_label:
-            app._mostrar_notificacao_trade({
-                "tipo": "COMPRA",
-                "valor_brl": 100,
-                "motivo": "compra_extra",
-            })
+            app._mostrar_notificacao_trade(
+                {
+                    "tipo": "COMPRA",
+                    "valor_brl": 100,
+                    "motivo": "compra_extra",
+                }
+            )
 
         create_label.assert_called_once()
         self.assertIs(app.lbl_toast, fresh_toast)
@@ -796,7 +803,9 @@ class SimulatorTests(unittest.TestCase):
         app.motor.parar.side_effect = lambda: steps.append("stop motor")
         app.destroy = Mock(side_effect=lambda: steps.append("destroy"))
 
-        with patch("gui.plt.close", side_effect=lambda _: steps.append("close plot")) as close:
+        with patch(
+            "gui.plt.close", side_effect=lambda _: steps.append("close plot")
+        ) as close:
             app._ao_fechar()
 
         self.assertEqual(
@@ -811,11 +820,13 @@ class SimulatorTests(unittest.TestCase):
                 "destroy",
             ],
         )
-        close.assert_has_calls([
-            call(app.fig),
-            call(app.fig_backtest),
-            call(app.fig_patrimonio),
-        ])
+        close.assert_has_calls(
+            [
+                call(app.fig),
+                call(app.fig_backtest),
+                call(app.fig_patrimonio),
+            ]
+        )
         app._ao_fechar()
         app.destroy.assert_called_once()
 
@@ -830,7 +841,7 @@ class SimulatorTests(unittest.TestCase):
             )
             expected = {}
             for name in names:
-                contents = f'{{"file": "{name}"}}'.encode("utf-8")
+                contents = f'{{"file": "{name}"}}'.encode()
                 with open(os.path.join(directory, name), "wb") as file:
                     file.write(contents)
                 expected[name] = contents
@@ -872,7 +883,9 @@ class SimulatorTests(unittest.TestCase):
                     {
                         "state_file": os.path.join("data", "state.json"),
                         "history_file": os.path.join("data", "history.json"),
-                        "trade_journal_file": os.path.join("data", "trade_transaction.json"),
+                        "trade_journal_file": os.path.join(
+                            "data", "trade_transaction.json"
+                        ),
                         "cash_flow_file": os.path.join("data", "cash_flow.json"),
                         "equity_file": os.path.join("data", "equity_history.json"),
                     },
@@ -904,9 +917,7 @@ class SimulatorTests(unittest.TestCase):
         ]
         self.estado.capital_brl = 1150
         with redirect_stdout(output):
-            imprimir_snapshot(
-                self.estado, 200_000, fluxo_caixa=fluxo_caixa
-            )
+            imprimir_snapshot(self.estado, 200_000, fluxo_caixa=fluxo_caixa)
 
         self.assertIn("Capital líquido:      R$     1.150,00", output.getvalue())
         self.assertIn("Lucro/prejuízo:       R$        +0,00", output.getvalue())
@@ -958,9 +969,10 @@ class SimulatorTests(unittest.TestCase):
     def test_forecast_is_bounded_and_analyst_signal_is_not_dominant(self):
         now = datetime(2026, 10, 13, 12, tzinfo=timezone.utc)
         history = [
-            (now - timedelta(hours=24 - hour), 400_000 * math.exp(
-                hour * 0.0005 + 0.004 * math.sin(hour)
-            ))
+            (
+                now - timedelta(hours=24 - hour),
+                400_000 * math.exp(hour * 0.0005 + 0.004 * math.sin(hour)),
+            )
             for hour in range(25)
         ]
         positive = calcular_previsao(history, 405_000, 1, now)

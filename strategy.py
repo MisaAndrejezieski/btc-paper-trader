@@ -33,7 +33,8 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
 
     variacao = (
         (preco_brl - estado.preco_medio_brl) / estado.preco_medio_brl
-        if estado.preco_medio_brl > 0 else 0.0
+        if estado.preco_medio_brl > 0
+        else 0.0
     )
 
     # Evita repetir a proteção ou recomprar enquanto a queda que a disparou persiste.
@@ -72,13 +73,14 @@ def decidir_acao(estado: Estado, preco_brl: float) -> dict:
 
     # --- Verifica compra extra em queda forte ---
     if estado.ultima_compra_ts and estado.capital_brl > 0:
-        ultima_compra_preco = (
-            estado.ultimo_preco_compra_brl or estado.preco_medio_brl
-        )
+        ultima_compra_preco = estado.ultimo_preco_compra_brl or estado.preco_medio_brl
         if ultima_compra_preco > 0:
             variacao = (preco_brl - ultima_compra_preco) / ultima_compra_preco
             if variacao <= -(CONFIG["queda_para_compra_extra_pct"] / 100):
-                valor = CONFIG["valor_compra_base_brl"] * CONFIG["multiplicador_compra_extra"]
+                valor = (
+                    CONFIG["valor_compra_base_brl"]
+                    * CONFIG["multiplicador_compra_extra"]
+                )
                 if estado.capital_brl >= valor:
                     return {
                         "acao": "COMPRA",

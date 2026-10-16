@@ -27,9 +27,7 @@ def imprimir_snapshot(
     depositos = sum(
         item["valor_brl"] for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
     )
-    saques = sum(
-        item["valor_brl"] for item in fluxo_caixa if item["tipo"] == "SAQUE"
-    )
+    saques = sum(item["valor_brl"] for item in fluxo_caixa if item["tipo"] == "SAQUE")
     capital_aportado = estado.patrimonio_inicial_brl + depositos - saques
     lucro = patrimonio - capital_aportado
     lucro_pct = (lucro / capital_aportado) * 100 if capital_aportado > 0 else 0
@@ -40,7 +38,8 @@ def imprimir_snapshot(
         lucro_hold = patrimonio_hold - estado.patrimonio_inicial_brl
         lucro_hold_pct = (
             (lucro_hold / estado.patrimonio_inicial_brl) * 100
-            if estado.patrimonio_inicial_brl else 0
+            if estado.patrimonio_inicial_brl
+            else 0
         )
     else:
         lucro_hold = None
@@ -64,7 +63,9 @@ def imprimir_snapshot(
     print(f"  Depósitos totais:     R$ {_formatar_reais(depositos):>12}")
     print(f"  Saques totais:        R$ {_formatar_reais(saques):>12}")
     print(f"  Capital líquido:      R$ {_formatar_reais(capital_aportado):>12}")
-    print(f"  Lucro/prejuízo:       R$ {_formatar_reais(lucro, sinal=True):>12}  ({lucro_pct:+.2f}%)")
+    print(
+        f"  Lucro/prejuízo:       R$ {_formatar_reais(lucro, sinal=True):>12}  ({lucro_pct:+.2f}%)"
+    )
     if lucro_hold is None:
         print("  Buy-and-hold:         indisponível (informe o preço inicial)")
     else:
@@ -73,25 +74,37 @@ def imprimir_snapshot(
             f"({lucro_hold_pct:+.2f}%)"
         )
     print("-" * 60)
-    print(f"  Preço médio:          R$ {_formatar_reais(estado.preco_medio_brl):>12}  ({var_pm:+.2f}%)")
-    print(f"  Trades:               {estado.total_compras} compras / {estado.total_vendas} vendas")
+    print(
+        f"  Preço médio:          R$ {_formatar_reais(estado.preco_medio_brl):>12}  ({var_pm:+.2f}%)"
+    )
+    print(
+        f"  Trades:               {estado.total_compras} compras / {estado.total_vendas} vendas"
+    )
     print(f"  Taxas pagas:          R$ {_formatar_reais(estado.total_taxas_brl):>12}")
     print("=" * 60)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Exibe um snapshot do BTC Paper Trader.")
-    parser.add_argument("--price", type=float, required=True, help="Preço atual do BTC em BRL.")
-    parser.add_argument("--initial-price", type=float, help="Preço inicial para comparação buy-and-hold.")
+    parser = argparse.ArgumentParser(
+        description="Exibe um snapshot do BTC Paper Trader."
+    )
+    parser.add_argument(
+        "--price", type=float, required=True, help="Preço atual do BTC em BRL."
+    )
+    parser.add_argument(
+        "--initial-price",
+        type=float,
+        help="Preço inicial para comparação buy-and-hold.",
+    )
     parser.add_argument("--state", default=os.path.join("data", "state.json"))
     parser.add_argument("--cash-flow", default=os.path.join("data", "cash_flow.json"))
     args = parser.parse_args()
 
-    with open(args.state, "r", encoding="utf-8") as file:
+    with open(args.state, encoding="utf-8") as file:
         estado = Estado.from_dict(json.load(file))
     fluxo_caixa = []
     if os.path.exists(args.cash_flow):
-        with open(args.cash_flow, "r", encoding="utf-8") as file:
+        with open(args.cash_flow, encoding="utf-8") as file:
             fluxo_caixa = json.load(file)
     imprimir_snapshot(
         estado,

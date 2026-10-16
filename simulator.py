@@ -68,7 +68,9 @@ def registrar_saque(estado: Estado, valor_brl: float) -> CashFlow:
     )
 
 
-def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: str) -> Trade:
+def executar_compra(
+    estado: Estado, preco_brl: float, valor_brl: float, motivo: str
+) -> Trade:
     """Executa uma compra simulada, incluindo taxa e preço médio ponderado.
 
     Args:

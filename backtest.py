@@ -36,11 +36,13 @@ def simular_backtest(
     estado.ultimo_preco_compra_brl = first_price
 
     buy_hold_btc = capital_inicial_brl * (1 - taxa) / first_price
-    points = [{
-        "timestamp": first_timestamp.isoformat(),
-        "strategy": estado.capital_brl + estado.capital_btc * first_price,
-        "buy_hold": buy_hold_btc * first_price,
-    }]
+    points = [
+        {
+            "timestamp": first_timestamp.isoformat(),
+            "strategy": estado.capital_brl + estado.capital_btc * first_price,
+            "buy_hold": buy_hold_btc * first_price,
+        }
+    ]
     total_trades = 1
 
     for timestamp, price in ordered[1:]:
@@ -50,16 +52,16 @@ def simular_backtest(
             estado.ultima_compra_ts = timestamp.isoformat()
             total_trades += 1
         elif action["acao"] == "VENDA":
-            executar_venda(
-                estado, price, action["percentual"], action["motivo"]
-            )
+            executar_venda(estado, price, action["percentual"], action["motivo"])
             estado.ultima_compra_ts = timestamp.isoformat()
             total_trades += 1
-        points.append({
-            "timestamp": timestamp.isoformat(),
-            "strategy": estado.capital_brl + estado.capital_btc * price,
-            "buy_hold": buy_hold_btc * price,
-        })
+        points.append(
+            {
+                "timestamp": timestamp.isoformat(),
+                "strategy": estado.capital_brl + estado.capital_btc * price,
+                "buy_hold": buy_hold_btc * price,
+            }
+        )
 
     final = points[-1]
     return {

@@ -150,13 +150,17 @@ class MotorSimulador:
         """
         if os.path.exists(CONFIG["state_file"]):
             try:
-                with open(CONFIG["state_file"], "r", encoding="utf-8") as f:
+                with open(CONFIG["state_file"], encoding="utf-8") as f:
                     data = json.load(f)
                 if not isinstance(data, dict):
                     raise ValueError("O estado precisa ser um objeto JSON.")
                 return Estado.from_dict(data)
             except (
-                json.JSONDecodeError, OSError, TypeError, UnicodeError, ValueError
+                json.JSONDecodeError,
+                OSError,
+                TypeError,
+                UnicodeError,
+                ValueError,
             ) as exc:
                 raise ValueError(
                     f"Não foi possível carregar {CONFIG['state_file']}; "
@@ -185,7 +189,7 @@ class MotorSimulador:
         """
         if os.path.exists(CONFIG["history_file"]):
             try:
-                with open(CONFIG["history_file"], "r", encoding="utf-8") as f:
+                with open(CONFIG["history_file"], encoding="utf-8") as f:
                     data = json.load(f)
                 if not isinstance(data, list) or any(
                     not isinstance(trade, dict) for trade in data
@@ -218,7 +222,7 @@ class MotorSimulador:
         if not os.path.exists(CONFIG["cash_flow_file"]):
             return []
         try:
-            with open(CONFIG["cash_flow_file"], "r", encoding="utf-8") as f:
+            with open(CONFIG["cash_flow_file"], encoding="utf-8") as f:
                 fluxo_caixa = json.load(f)
             if not isinstance(fluxo_caixa, list) or any(
                 not isinstance(evento, dict) for evento in fluxo_caixa
@@ -251,7 +255,7 @@ class MotorSimulador:
         if not os.path.exists(path):
             return []
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
             if not isinstance(data, list) or any(
                 not isinstance(point, dict) for point in data
@@ -329,12 +333,14 @@ class MotorSimulador:
         if not os.path.exists(path):
             return
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 transaction = json.load(f)
             state = transaction["state"]
             history = transaction["history"]
-            if not isinstance(state, dict) or not isinstance(history, list) or any(
-                not isinstance(trade, dict) for trade in history
+            if (
+                not isinstance(state, dict)
+                or not isinstance(history, list)
+                or any(not isinstance(trade, dict) for trade in history)
             ):
                 raise ValueError("O diário de recuperação contém dados inválidos.")
             cash_flow = transaction.get("cash_flow")
@@ -354,7 +360,12 @@ class MotorSimulador:
                 )
             os.remove(path)
         except (
-            KeyError, json.JSONDecodeError, OSError, TypeError, UnicodeError, ValueError
+            KeyError,
+            json.JSONDecodeError,
+            OSError,
+            TypeError,
+            UnicodeError,
+            ValueError,
         ) as exc:
             raise RuntimeError(
                 f"Não foi possível recuperar a transação pendente em {path}; "
@@ -579,7 +590,9 @@ class MotorSimulador:
         """
         if not hasattr(self, "equity_history") or not isfinite(preco) or preco <= 0:
             return
-        now = timestamp if isinstance(timestamp, datetime) else datetime.now(timezone.utc)
+        now = (
+            timestamp if isinstance(timestamp, datetime) else datetime.now(timezone.utc)
+        )
         if now.tzinfo is None:
             now = now.replace(tzinfo=timezone.utc)
         now = now.astimezone(timezone.utc)
@@ -587,9 +600,9 @@ class MotorSimulador:
             anterior = datetime.fromisoformat(self.equity_history[-1]["timestamp"])
             if anterior.tzinfo is None:
                 anterior = anterior.replace(tzinfo=timezone.utc)
-            if anterior.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0) == now.replace(
+            if anterior.astimezone(timezone.utc).replace(
                 minute=0, second=0, microsecond=0
-            ):
+            ) == now.replace(minute=0, second=0, microsecond=0):
                 if self.erro_patrimonio:
                     self._persistir_equity(force_sample=True)
                 return
@@ -605,26 +618,26 @@ class MotorSimulador:
             if units <= 0 and equity > 0:
                 units = equity
             nav = equity / units if units > 0 else 0.0
-            benchmark_btc = max(
-                0.0, float(previous["benchmark_btc"]) + flow / preco
-            )
+            benchmark_btc = max(0.0, float(previous["benchmark_btc"]) + flow / preco)
         else:
             units = equity
             nav = 1.0 if equity > 0 else 0.0
             benchmark_btc = equity / preco
 
-        self.equity_history.append({
-            "timestamp": now.isoformat(),
-            "price": preco,
-            "cash": self.estado.capital_brl,
-            "btc": self.estado.capital_btc,
-            "equity": equity,
-            "nav": nav,
-            "units": units,
-            "benchmark_btc": benchmark_btc,
-            "benchmark": benchmark_btc * preco,
-            "flow": flow,
-        })
+        self.equity_history.append(
+            {
+                "timestamp": now.isoformat(),
+                "price": preco,
+                "cash": self.estado.capital_brl,
+                "btc": self.estado.capital_btc,
+                "equity": equity,
+                "nav": nav,
+                "units": units,
+                "benchmark_btc": benchmark_btc,
+                "benchmark": benchmark_btc * preco,
+                "flow": flow,
+            }
+        )
         self.equity_history = self.equity_history[-15000:]
         self._pending_equity_flow = 0.0
         self._persistir_equity(force_sample=force_sample)
@@ -677,9 +690,7 @@ class MotorSimulador:
             debounce_seconds = max(
                 0.0, float(CONFIG.get("equity_debounce_segundos", 30))
             )
-            remaining = debounce_seconds - (
-                time.monotonic() - requested_at
-            )
+            remaining = debounce_seconds - (time.monotonic() - requested_at)
             if remaining > 0:
                 self._agendar_persistencia_equity(remaining)
                 return
@@ -774,10 +785,14 @@ class MotorSimulador:
             or self.preco_atual is None
             or not isinstance(atualizado_em, datetime)
         ):
-            raise RuntimeError("A cotação não está atualizada; aguarde uma fonte online.")
+            raise RuntimeError(
+                "A cotação não está atualizada; aguarde uma fonte online."
+            )
         if atualizado_em.tzinfo is None:
             atualizado_em = atualizado_em.replace(tzinfo=timezone.utc)
-        idade = (datetime.now(timezone.utc) - atualizado_em.astimezone(timezone.utc)).total_seconds()
+        idade = (
+            datetime.now(timezone.utc) - atualizado_em.astimezone(timezone.utc)
+        ).total_seconds()
         if idade < 0 or idade > CONFIG.get("cotacao_max_age_segundos", 600):
             self.preco_atualizado = False
             raise RuntimeError(
@@ -878,7 +893,9 @@ class MotorSimulador:
             evento = registrar_deposito(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
             self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
-            self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) + valor_brl
+            self._pending_equity_flow = (
+                getattr(self, "_pending_equity_flow", 0.0) + valor_brl
+            )
             if getattr(self, "preco_atual", None) is not None:
                 self._registrar_amostra_equity(
                     self.preco_atual,
@@ -912,7 +929,9 @@ class MotorSimulador:
             evento = registrar_saque(self.estado, valor_brl)
             self.fluxo_caixa.append(evento.to_dict())
             self._persistir_fluxo_caixa(estado_anterior, fluxo_caixa_anterior)
-            self._pending_equity_flow = getattr(self, "_pending_equity_flow", 0.0) - valor_brl
+            self._pending_equity_flow = (
+                getattr(self, "_pending_equity_flow", 0.0) - valor_brl
+            )
             if getattr(self, "preco_atual", None) is not None:
                 self._registrar_amostra_equity(
                     self.preco_atual,
@@ -998,7 +1017,13 @@ class MotorSimulador:
                     try:
                         historico_cotacao = buscar_historico_btc_brl()
                         atualizado_mercado = datetime.now(timezone.utc)
-                    except (RequestException, ValueError, KeyError, TypeError, IndexError) as exc:
+                    except (
+                        RequestException,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        IndexError,
+                    ) as exc:
                         erro_analise = f"Histórico indisponível: {exc}"
                         print(f"[AVISO] {erro_analise}")
 
@@ -1006,7 +1031,8 @@ class MotorSimulador:
                         atualizado_analistas is None
                         or (
                             datetime.now(timezone.utc) - atualizado_analistas
-                        ).total_seconds() >= 900
+                        ).total_seconds()
+                        >= 900
                     )
                     if deve_atualizar_analistas:
                         try:
@@ -1020,7 +1046,9 @@ class MotorSimulador:
                                 part for part in (erro_analise, erro_fontes) if part
                             )
                         except (RuntimeError, RequestException, ValueError) as exc:
-                            erro_analise = f"{erro_analise} Analistas indisponíveis: {exc}".strip()
+                            erro_analise = (
+                                f"{erro_analise} Analistas indisponíveis: {exc}".strip()
+                            )
                             print(f"[AVISO] {erro_analise}")
 
                     if historico_cotacao:
@@ -1031,7 +1059,9 @@ class MotorSimulador:
                                 sentimento_analistas,
                             )
                         except ValueError as exc:
-                            erro_analise = f"{erro_analise} Projeção indisponível: {exc}".strip()
+                            erro_analise = (
+                                f"{erro_analise} Projeção indisponível: {exc}".strip()
+                            )
                             previsao_dia = []
 
                 if not self.rodando:
@@ -1053,14 +1083,18 @@ class MotorSimulador:
 
                     if acao["acao"] == "COMPRA":
                         trade_executado = executar_compra(
-                            self.estado, cotacao.preco_brl,
-                            acao["valor_brl"], acao["motivo"]
+                            self.estado,
+                            cotacao.preco_brl,
+                            acao["valor_brl"],
+                            acao["motivo"],
                         )
                         self._registrar_trade(trade_executado)
                     elif acao["acao"] == "VENDA":
                         trade_executado = executar_venda(
-                            self.estado, cotacao.preco_brl,
-                            acao["percentual"], acao["motivo"]
+                            self.estado,
+                            cotacao.preco_brl,
+                            acao["percentual"],
+                            acao["motivo"],
                         )
                         self._registrar_trade(trade_executado)
 

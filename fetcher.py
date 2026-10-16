@@ -18,8 +18,7 @@ from config import CONFIG
 
 # --- Fontes de dados ---
 COINGECKO_URL = (
-    "https://api.coingecko.com/api/v3/simple/price"
-    "?ids=bitcoin&vs_currencies=brl,usd"
+    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=brl,usd"
 )
 BINANCE_URL = "https://api.binance.com/api/v3/ticker/price?symbol=BTCBRL"
 
@@ -36,6 +35,7 @@ class Cotacao:
         timestamp: Instante da cotação como datetime com fuso.
         atual: ``True`` somente para resposta obtida online nesta consulta.
     """
+
     preco_brl: float
     fonte: str
     timestamp: datetime
@@ -119,13 +119,15 @@ def ler_cache() -> Cotacao | None:
     """
     if os.path.exists(CACHE_FILE):
         try:
-            with open(CACHE_FILE, "r", encoding="utf-8") as f:
+            with open(CACHE_FILE, encoding="utf-8") as f:
                 data = json.load(f)
                 timestamp_text = data.get("timestamp")
                 timestamp = (
                     datetime.fromisoformat(timestamp_text)
                     if timestamp_text
-                    else datetime.fromtimestamp(os.path.getmtime(CACHE_FILE), timezone.utc)
+                    else datetime.fromtimestamp(
+                        os.path.getmtime(CACHE_FILE), timezone.utc
+                    )
                 )
                 if timestamp.tzinfo is None:
                     timestamp = timestamp.replace(tzinfo=timezone.utc)
@@ -163,11 +165,16 @@ def salvar_cache(preco_brl: float, fonte: str, timestamp: datetime) -> None:
     """
     os.makedirs(CONFIG["cache_dir"], exist_ok=True)
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
-        json.dump({
-            "preco_brl": preco_brl,
-            "fonte": fonte,
-            "timestamp": timestamp.isoformat(),
-        }, f, indent=2, ensure_ascii=False)
+        json.dump(
+            {
+                "preco_brl": preco_brl,
+                "fonte": fonte,
+                "timestamp": timestamp.isoformat(),
+            },
+            f,
+            indent=2,
+            ensure_ascii=False,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -207,10 +214,15 @@ def buscar_cotacao_btc_brl() -> Cotacao:
     # 3. Cache
     cotacao = ler_cache()
     if cotacao is not None:
-        print("[AVISO] Exibindo preço do cache; operações automáticas e manuais bloqueadas.")
+        print(
+            "[AVISO] Exibindo preço do cache; operações automáticas "
+            "e manuais bloqueadas."
+        )
         return cotacao
 
-    raise RuntimeError("Não foi possível obter cotação atual nem encontrar preço em cache.")
+    raise RuntimeError(
+        "Não foi possível obter cotação atual nem encontrar preço em cache."
+    )
 
 
 def buscar_preco_btc_brl() -> float:
@@ -235,10 +247,13 @@ if __name__ == "__main__":
     cotacao = buscar_cotacao_btc_brl()
     status = "atual" if cotacao.atual else "CACHE DESATUALIZADO"
     preco_formatado = (
-        f"{cotacao.preco_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        f"{cotacao.preco_brl:,.2f}".replace(",", "X")
+        .replace(".", ",")
+        .replace("X", ".")
     )
     print(
         f"BTC {status} ({cotacao.fonte}, "
-        f"{cotacao.timestamp.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M:%S')}): "
+        f"{cotacao.timestamp.astimezone(ZoneInfo('America/Sao_Paulo')).strftime('%d/%m/%Y %H:%M:%S')}"
+        f"): "
         f"R$ {preco_formatado}"
     )

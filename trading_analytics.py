@@ -68,7 +68,9 @@ def calcular_pnl_realizado(trades: list[dict]) -> list[float | None]:
 
         if tipo == "COMPRA":
             if quantity > 0 and gross >= 0:
-                lots.append([quantity, gross / quantity, _timestamp(trade.get("timestamp"))])
+                lots.append(
+                    [quantity, gross / quantity, _timestamp(trade.get("timestamp"))]
+                )
             realized.append(None)
             continue
 
@@ -141,12 +143,11 @@ def calcular_metricas_risco(
         if timestamp is not None and math.isfinite(nav) and nav > 0:
             daily_nav[timestamp.date()] = (timestamp, nav)
     ordered_daily = [
-        item[1][1]
-        for item in sorted(daily_nav.items(), key=lambda item: item[1][0])
+        item[1][1] for item in sorted(daily_nav.items(), key=lambda item: item[1][0])
     ]
     daily_returns = [
         current / previous - 1
-        for previous, current in zip(ordered_daily, ordered_daily[1:])
+        for previous, current in zip(ordered_daily, ordered_daily[1:], strict=False)
         if previous > 0
     ]
     sharpe = None
@@ -157,19 +158,16 @@ def calcular_metricas_risco(
 
     pnl_by_trade = calcular_pnl_realizado(trades)
     sell_pnls = [
-        pnl for trade, pnl in zip(trades, pnl_by_trade)
+        pnl
+        for trade, pnl in zip(trades, pnl_by_trade, strict=False)
         if str(trade.get("tipo", "")).upper() == "VENDA" and pnl is not None
     ]
     wins = [pnl for pnl in sell_pnls if pnl > 0]
     losses = [pnl for pnl in sell_pnls if pnl < 0]
     profit_factor = (
-        sum(wins) / abs(sum(losses))
-        if losses else (math.inf if wins else None)
+        sum(wins) / abs(sum(losses)) if losses else (math.inf if wins else None)
     )
-    win_rate = (
-        len(wins) / len(sell_pnls) * 100
-        if sell_pnls else None
-    )
+    win_rate = len(wins) / len(sell_pnls) * 100 if sell_pnls else None
 
     exposure_points = []
     for point in equity_history:
@@ -191,7 +189,7 @@ def calcular_metricas_risco(
     exposure_points.sort(key=lambda item: item[0])
     exposure_durations = [
         max(0.0, (right[0] - left[0]).total_seconds())
-        for left, right in zip(exposure_points, exposure_points[1:])
+        for left, right in zip(exposure_points, exposure_points[1:], strict=False)
     ]
     positive_durations = [duration for duration in exposure_durations if duration > 0]
     last_duration = median(positive_durations) if positive_durations else 1.0
@@ -199,9 +197,13 @@ def calcular_metricas_risco(
         weights = exposure_durations + [last_duration]
         total_weight = sum(weights)
         average_exposure = (
-            sum(point[1] * weight for point, weight in zip(exposure_points, weights))
+            sum(
+                point[1] * weight
+                for point, weight in zip(exposure_points, weights, strict=False)
+            )
             / total_weight
-            if total_weight > 0 else fmean(point[1] for point in exposure_points)
+            if total_weight > 0
+            else fmean(point[1] for point in exposure_points)
         )
     else:
         average_exposure = None
@@ -234,7 +236,8 @@ def calcular_metricas_risco(
     duration_hours = (
         sum(hours * quantity for hours, quantity in durations)
         / sum(quantity for _, quantity in durations)
-        if durations else None
+        if durations
+        else None
     )
 
     return {
@@ -267,19 +270,29 @@ def gerar_csv_trades(trades: list[dict]) -> str:
     pnl_by_trade = calcular_pnl_realizado(trades)
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=";")
-    writer.writerow([
-        "timestamp", "tipo", "motivo", "preco_brl", "quantidade_btc",
-        "valor_brl", "taxa_brl", "pnl_realizado_brl",
-    ])
-    for trade, pnl in zip(trades, pnl_by_trade):
-        writer.writerow([
-            trade.get("timestamp", ""),
-            trade.get("tipo", ""),
-            trade.get("motivo", ""),
-            trade.get("preco_brl", ""),
-            trade.get("quantidade_btc", ""),
-            trade.get("valor_brl", ""),
-            trade.get("taxa_brl", ""),
-            "" if pnl is None else round(pnl, 8),
-        ])
+    writer.writerow(
+        [
+            "timestamp",
+            "tipo",
+            "motivo",
+            "preco_brl",
+            "quantidade_btc",
+            "valor_brl",
+            "taxa_brl",
+            "pnl_realizado_brl",
+        ]
+    )
+    for trade, pnl in zip(trades, pnl_by_trade, strict=False):
+        writer.writerow(
+            [
+                trade.get("timestamp", ""),
+                trade.get("tipo", ""),
+                trade.get("motivo", ""),
+                trade.get("preco_brl", ""),
+                trade.get("quantidade_btc", ""),
+                trade.get("valor_brl", ""),
+                trade.get("taxa_brl", ""),
+                "" if pnl is None else round(pnl, 8),
+            ]
+        )
     return output.getvalue()

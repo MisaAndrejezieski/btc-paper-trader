@@ -11,13 +11,11 @@ from statistics import fmean, stdev
 
 import requests
 
-
 COINGECKO_RANGE_URL = (
     "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart/range"
 )
 COINGECKO_CHART_URL = (
-    "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart"
-    "?vs_currency=brl&days=1"
+    "https://api.coingecko.com/api/v3/coins/bitcoin/market_chart?vs_currency=brl&days=1"
 )
 ANALYST_FEEDS = (
     ("CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"),
@@ -32,12 +30,32 @@ _NEGATED_ANALYST_MENTION = re.compile(
     r"(?:bitcoin\s+)?(?:analysts?|strategists?|researchers?)\b"
 )
 _BULLISH_TERMS = (
-    "bullish", "rally", "surge", "breakout", "higher", "upside",
-    "gains", "rise", "rises", "soars", "rebound", "accumulate",
+    "bullish",
+    "rally",
+    "surge",
+    "breakout",
+    "higher",
+    "upside",
+    "gains",
+    "rise",
+    "rises",
+    "soars",
+    "rebound",
+    "accumulate",
 )
 _BEARISH_TERMS = (
-    "bearish", "selloff", "sell-off", "downside", "lower", "drop",
-    "falls", "falling", "decline", "plunge", "correction", "resistance",
+    "bearish",
+    "selloff",
+    "sell-off",
+    "downside",
+    "lower",
+    "drop",
+    "falls",
+    "falling",
+    "decline",
+    "plunge",
+    "correction",
+    "resistance",
 )
 
 
@@ -102,9 +120,7 @@ def buscar_historico_btc_brl_periodo(
     history = [
         (datetime.fromtimestamp(item[0] / 1000, timezone.utc), float(item[1]))
         for item in prices
-        if len(item) >= 2
-        and math.isfinite(float(item[1]))
-        and float(item[1]) > 0
+        if len(item) >= 2 and math.isfinite(float(item[1])) and float(item[1]) > 0
     ]
     if len(history) < 2:
         raise ValueError("A API retornou dados insuficientes para o backtest.")
@@ -118,12 +134,10 @@ def _limpar_html(text: str) -> str:
 def _sentimento(text: str) -> float:
     texto = text.casefold()
     bullish = sum(
-        len(re.findall(rf"\b{re.escape(term)}\b", texto))
-        for term in _BULLISH_TERMS
+        len(re.findall(rf"\b{re.escape(term)}\b", texto)) for term in _BULLISH_TERMS
     )
     bearish = sum(
-        len(re.findall(rf"\b{re.escape(term)}\b", texto))
-        for term in _BEARISH_TERMS
+        len(re.findall(rf"\b{re.escape(term)}\b", texto)) for term in _BEARISH_TERMS
     )
     total = bullish + bearish
     return (bullish - bearish) / total if total else 0.0
@@ -161,7 +175,9 @@ def analisar_feed_analistas(
             continue
         if published_at.tzinfo is None:
             published_at = published_at.replace(tzinfo=timezone.utc)
-        age_hours = (agora - published_at.astimezone(timezone.utc)).total_seconds() / 3600
+        age_hours = (
+            agora - published_at.astimezone(timezone.utc)
+        ).total_seconds() / 3600
         if age_hours < 0 or age_hours > 24:
             continue
 
@@ -169,15 +185,17 @@ def analisar_feed_analistas(
         if not link:
             continue
         creator = item.findtext("{http://purl.org/dc/elements/1.1/}creator", "")
-        articles.append(AnalystArticle(
-            publisher=publisher,
-            author=_limpar_html(creator).strip() or publisher,
-            title=title.strip(),
-            url=link,
-            published_at=published_at.astimezone(timezone.utc),
-            sentiment=score,
-            analyst_view=analyst_view,
-        ))
+        articles.append(
+            AnalystArticle(
+                publisher=publisher,
+                author=_limpar_html(creator).strip() or publisher,
+                title=title.strip(),
+                url=link,
+                published_at=published_at.astimezone(timezone.utc),
+                sentiment=score,
+                analyst_view=analyst_view,
+            )
+        )
     return articles
 
 
@@ -195,7 +213,13 @@ def buscar_sentimento_analistas() -> tuple[float, list[AnalystArticle], str]:
             )
             response.raise_for_status()
             articles.extend(analisar_feed_analistas(response.text, publisher, agora))
-        except (requests.RequestException, ET.ParseError, KeyError, TypeError, ValueError) as exc:
+        except (
+            requests.RequestException,
+            ET.ParseError,
+            KeyError,
+            TypeError,
+            ValueError,
+        ) as exc:
             errors.append(f"{publisher}: {exc}")
             print(f"[AVISO] Não foi possível consultar análises de {publisher}: {exc}")
 
@@ -209,22 +233,26 @@ def buscar_sentimento_analistas() -> tuple[float, list[AnalystArticle], str]:
 
     now_utc = agora.astimezone(timezone.utc)
     analyst_articles = [
-        article for article in articles
+        article
+        for article in articles
         if article.analyst_view and article.sentiment != 0
     ]
     weights = [
-        math.exp(-math.log(2) * max(
-            0.0, (now_utc - article.published_at).total_seconds() / 3600
-        ) / 8)
+        math.exp(
+            -math.log(2)
+            * max(0.0, (now_utc - article.published_at).total_seconds() / 3600)
+            / 8
+        )
         for article in analyst_articles
     ]
     score = (
         sum(
             article.sentiment * weight
-            for article, weight in zip(analyst_articles, weights)
+            for article, weight in zip(analyst_articles, weights, strict=False)
         )
         / sum(weights)
-        if weights else 0.0
+        if weights
+        else 0.0
     )
     return (
         score,
@@ -239,7 +267,7 @@ def calcular_previsao(
     analyst_sentiment: float,
     now: datetime | None = None,
 ) -> list[ForecastPoint]:
-    """Project an indicative 24-hour path using momentum, volatility, and analyst sentiment."""
+    """Project an indicative path from momentum, volatility, and sentiment."""
     if not math.isfinite(current_price) or current_price <= 0:
         raise ValueError("O preço atual precisa ser maior que zero.")
     hourly_prices = {}
@@ -252,8 +280,9 @@ def calcular_previsao(
     ordered = sorted(hourly_prices.items())[-25:]
     returns = [
         math.log(current / previous)
-        for (previous_hour, previous), (current_hour, current)
-        in zip(ordered, ordered[1:])
+        for (previous_hour, previous), (current_hour, current) in zip(
+            ordered, ordered[1:], strict=False
+        )
         if current_hour - previous_hour == 1 and current > 0 and previous > 0
     ][-24:]
     if len(returns) < 6:
@@ -279,10 +308,12 @@ def calcular_previsao(
         fraction = hour / 24
         expected = current_price * math.exp(daily_drift * fraction)
         interval = 1.28 * daily_volatility * math.sqrt(fraction)
-        points.append(ForecastPoint(
-            timestamp=start + timedelta(hours=hour),
-            expected_brl=expected,
-            low_brl=current_price * math.exp(daily_drift * fraction - interval),
-            high_brl=current_price * math.exp(daily_drift * fraction + interval),
-        ))
+        points.append(
+            ForecastPoint(
+                timestamp=start + timedelta(hours=hour),
+                expected_brl=expected,
+                low_brl=current_price * math.exp(daily_drift * fraction - interval),
+                high_brl=current_price * math.exp(daily_drift * fraction + interval),
+            )
+        )
     return points

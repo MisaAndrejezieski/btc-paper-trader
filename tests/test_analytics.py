@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from backtest import simular_backtest
-from motor import MotorSimulador
 from market_insights import buscar_historico_btc_brl_periodo
 from models import Estado
+from motor import MotorSimulador
 from trading_analytics import (
     calcular_metricas_risco,
     calcular_pnl_realizado,
@@ -52,9 +52,27 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_risk_metrics_cover_drawdown_win_rate_profit_factor_and_holding(self):
         history = [
-            {"timestamp": self.start.isoformat(), "nav": 1.0, "equity": 100, "btc": 1, "price": 100},
-            {"timestamp": (self.start + timedelta(days=1)).isoformat(), "nav": 1.2, "equity": 120, "btc": 1, "price": 120},
-            {"timestamp": (self.start + timedelta(days=2)).isoformat(), "nav": 0.9, "equity": 90, "btc": 1, "price": 90},
+            {
+                "timestamp": self.start.isoformat(),
+                "nav": 1.0,
+                "equity": 100,
+                "btc": 1,
+                "price": 100,
+            },
+            {
+                "timestamp": (self.start + timedelta(days=1)).isoformat(),
+                "nav": 1.2,
+                "equity": 120,
+                "btc": 1,
+                "price": 120,
+            },
+            {
+                "timestamp": (self.start + timedelta(days=2)).isoformat(),
+                "nav": 0.9,
+                "equity": 90,
+                "btc": 1,
+                "price": 90,
+            },
         ]
         metrics = calcular_metricas_risco(self.trades, history)
         self.assertAlmostEqual(metrics["max_drawdown_pct"], 25.0)
@@ -84,7 +102,9 @@ class AnalyticsTests(unittest.TestCase):
 
     def test_backtest_rejects_zero_capital(self):
         with self.assertRaisesRegex(ValueError, "maior que zero"):
-            simular_backtest([(self.start, 100), (self.start + timedelta(days=1), 101)], 0)
+            simular_backtest(
+                [(self.start, 100), (self.start + timedelta(days=1), 101)], 0
+            )
 
     def test_historical_fetch_uses_supported_range_parameters(self):
         response = Mock()

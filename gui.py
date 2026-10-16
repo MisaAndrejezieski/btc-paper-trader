@@ -11,17 +11,18 @@ from tkinter import TclError, filedialog, messagebox
 
 import customtkinter as ctk
 import matplotlib
+
 matplotlib.use("TkAgg")
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.ticker import FuncFormatter, MaxNLocator
-from requests import RequestException
-
 from customtkinter.windows.widgets.appearance_mode.appearance_mode_tracker import (
     AppearanceModeTracker,
 )
 from customtkinter.windows.widgets.scaling.scaling_tracker import ScalingTracker
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.ticker import FuncFormatter, MaxNLocator
+from requests import RequestException
+
 from backtest import simular_backtest
 from formatting import formatar_reais
 from market_insights import buscar_historico_btc_brl_periodo
@@ -122,8 +123,10 @@ class AppBTC(ctk.CTk):
         # Grid principal: coluna única, com painéis roláveis
         # ----- LINHA 0: Título -----
         ctk.CTkLabel(
-            self.conteudo, text="⚡ BTC PAPER TRADER",
-            font=FONTE_TITULO, text_color=CORES["verde_matrix"]
+            self.conteudo,
+            text="⚡ BTC PAPER TRADER",
+            font=FONTE_TITULO,
+            text_color=CORES["verde_matrix"],
         ).grid(row=0, column=0, pady=(15, 5), sticky="w", padx=20)
 
         # ----- LINHA 1: Preço + Patrimônio -----
@@ -134,101 +137,145 @@ class AppBTC(ctk.CTk):
         self.card_preco = self._criar_card(self.frame_topo, "PREÇO BTC", "R$ —", "—")
         self.card_preco.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-        self.card_patrimonio = self._criar_card(self.frame_topo, "PATRIMÔNIO", "R$ —", "—")
+        self.card_patrimonio = self._criar_card(
+            self.frame_topo, "PATRIMÔNIO", "R$ —", "—"
+        )
         self.card_patrimonio.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
 
         # ----- LINHA 2: Posição -----
-        self.frame_posicao = ctk.CTkFrame(self.conteudo, fg_color=CORES["bg_card"], corner_radius=10)
+        self.frame_posicao = ctk.CTkFrame(
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
+        )
         self.frame_posicao.grid(row=2, column=0, sticky="ew", padx=20, pady=10)
         self.frame_posicao.grid_columnconfigure((0, 1, 2, 3), weight=1)
 
         ctk.CTkLabel(
-            self.frame_posicao, text="POSIÇÃO",
-            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+            self.frame_posicao,
+            text="POSIÇÃO",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=(10, 5))
 
         self.lbl_brl = self._criar_label_posicao(self.frame_posicao, "BRL", "—", 0, 0)
         self.lbl_btc = self._criar_label_posicao(self.frame_posicao, "BTC", "—", 0, 1)
-        self.lbl_preco_medio = self._criar_label_posicao(self.frame_posicao, "PREÇO MÉDIO", "—", 0, 2)
-        self.lbl_variacao = self._criar_label_posicao(self.frame_posicao, "VARIAÇÃO", "—", 0, 3)
+        self.lbl_preco_medio = self._criar_label_posicao(
+            self.frame_posicao, "PREÇO MÉDIO", "—", 0, 2
+        )
+        self.lbl_variacao = self._criar_label_posicao(
+            self.frame_posicao, "VARIAÇÃO", "—", 0, 3
+        )
 
         # ----- LINHA 3: Trades manuais e fluxo de caixa -----
-        self.frame_manual = ctk.CTkFrame(self.conteudo, fg_color=CORES["bg_card"], corner_radius=10)
+        self.frame_manual = ctk.CTkFrame(
+            self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
+        )
         self.frame_manual.grid(row=3, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_manual.grid_columnconfigure((0, 1), weight=1, uniform="ordem")
 
         ctk.CTkLabel(
-            self.frame_manual, text="TRADES MANUAIS (paper trading)",
-            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+            self.frame_manual,
+            text="TRADES MANUAIS (paper trading)",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(8, 4))
 
         self.grupo_compra = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
-        self.grupo_compra.grid(row=1, column=0, sticky="ew", padx=(15, 10), pady=(0, 10))
+        self.grupo_compra.grid(
+            row=1, column=0, sticky="ew", padx=(15, 10), pady=(0, 10)
+        )
         self.grupo_compra.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            self.grupo_compra, text="Comprar (R$)", font=FONTE_PEQUENA,
-            text_color=CORES["texto_secundario"]
+            self.grupo_compra,
+            text="Comprar (R$)",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.entrada_compra = ctk.CTkEntry(
             self.grupo_compra, placeholder_text="ex.: 100,00", width=130
         )
         self.entrada_compra.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         ctk.CTkButton(
-            self.grupo_compra, text="Comprar BTC", command=self._comprar_manual,
-            fg_color=CORES["verde_matrix"], hover_color=CORES["verde_escuro"], width=130
+            self.grupo_compra,
+            text="Comprar BTC",
+            command=self._comprar_manual,
+            fg_color=CORES["verde_matrix"],
+            hover_color=CORES["verde_escuro"],
+            width=130,
         ).grid(row=0, column=2, sticky="e")
 
         self.grupo_venda = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
         self.grupo_venda.grid(row=1, column=1, sticky="ew", padx=(10, 15), pady=(0, 10))
         self.grupo_venda.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            self.grupo_venda, text="Vender (BTC)", font=FONTE_PEQUENA,
-            text_color=CORES["texto_secundario"]
+            self.grupo_venda,
+            text="Vender (BTC)",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.entrada_venda = ctk.CTkEntry(
             self.grupo_venda, placeholder_text="ex.: 0,0001", width=130
         )
         self.entrada_venda.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         ctk.CTkButton(
-            self.grupo_venda, text="Vender BTC", command=self._vender_manual,
-            fg_color="#a63d40", hover_color="#7d2d30", width=130
+            self.grupo_venda,
+            text="Vender BTC",
+            command=self._vender_manual,
+            fg_color="#a63d40",
+            hover_color="#7d2d30",
+            width=130,
         ).grid(row=0, column=2, sticky="e")
 
         ctk.CTkLabel(
-            self.frame_manual, text="FLUXO DE CAIXA (não é trade)",
-            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+            self.frame_manual,
+            text="FLUXO DE CAIXA (não é trade)",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=15, pady=(0, 4))
 
         self.grupo_deposito = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
-        self.grupo_deposito.grid(row=3, column=0, sticky="ew", padx=(15, 10), pady=(0, 10))
+        self.grupo_deposito.grid(
+            row=3, column=0, sticky="ew", padx=(15, 10), pady=(0, 10)
+        )
         self.grupo_deposito.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            self.grupo_deposito, text="Depositar (R$)", font=FONTE_PEQUENA,
-            text_color=CORES["texto_secundario"]
+            self.grupo_deposito,
+            text="Depositar (R$)",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.entrada_deposito = ctk.CTkEntry(
             self.grupo_deposito, placeholder_text="ex.: 500,00", width=130
         )
         self.entrada_deposito.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         ctk.CTkButton(
-            self.grupo_deposito, text="Depositar", command=self._depositar_manual,
-            fg_color=CORES["verde_matrix"], hover_color=CORES["verde_escuro"], width=130
+            self.grupo_deposito,
+            text="Depositar",
+            command=self._depositar_manual,
+            fg_color=CORES["verde_matrix"],
+            hover_color=CORES["verde_escuro"],
+            width=130,
         ).grid(row=0, column=2, sticky="e")
 
         self.grupo_saque = ctk.CTkFrame(self.frame_manual, fg_color="transparent")
         self.grupo_saque.grid(row=3, column=1, sticky="ew", padx=(10, 15), pady=(0, 10))
         self.grupo_saque.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            self.grupo_saque, text="Sacar (R$)", font=FONTE_PEQUENA,
-            text_color=CORES["texto_secundario"]
+            self.grupo_saque,
+            text="Sacar (R$)",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_secundario"],
         ).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.entrada_saque = ctk.CTkEntry(
             self.grupo_saque, placeholder_text="ex.: 200,00", width=130
         )
         self.entrada_saque.grid(row=0, column=1, sticky="ew", padx=(0, 8))
         ctk.CTkButton(
-            self.grupo_saque, text="Sacar", command=self._sacar_manual,
-            fg_color="#a63d40", hover_color="#7d2d30", width=130
+            self.grupo_saque,
+            text="Sacar",
+            command=self._sacar_manual,
+            fg_color="#a63d40",
+            hover_color="#7d2d30",
+            width=130,
         ).grid(row=0, column=2, sticky="e")
 
         # ----- LINHA 4: Cotação e expectativa de mercado -----
@@ -277,17 +324,13 @@ class AppBTC(ctk.CTk):
             anchor="w",
             wraplength=max(400, largura_inicial - 100),
         )
-        self.lbl_modelo_status.grid(
-            row=3, column=0, sticky="ew", padx=16, pady=(0, 4)
-        )
+        self.lbl_modelo_status.grid(row=3, column=0, sticky="ew", padx=16, pady=(0, 4))
 
         # ----- Painel independente de notícias -----
         self.frame_noticias = ctk.CTkFrame(
             self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
         )
-        self.frame_noticias.grid(
-            row=5, column=0, sticky="ew", padx=20, pady=(0, 10)
-        )
+        self.frame_noticias.grid(row=5, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_noticias.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             self.frame_noticias,
@@ -367,9 +410,7 @@ class AppBTC(ctk.CTk):
             font=FONTE_SUBTITULO,
             text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 0))
-        self.fig_backtest, self.ax_backtest = plt.subplots(
-            figsize=(11, 2.4), dpi=90
-        )
+        self.fig_backtest, self.ax_backtest = plt.subplots(figsize=(11, 2.4), dpi=90)
         self.fig_backtest.patch.set_facecolor(CORES["bg_card"])
         self.canvas_backtest = FigureCanvasTkAgg(
             self.fig_backtest, master=self.frame_resultado_backtest
@@ -384,9 +425,7 @@ class AppBTC(ctk.CTk):
         self.frame_patrimonio = ctk.CTkFrame(
             self.conteudo, fg_color=CORES["bg_card"], corner_radius=10
         )
-        self.frame_patrimonio.grid(
-            row=7, column=0, sticky="ew", padx=20, pady=(0, 10)
-        )
+        self.frame_patrimonio.grid(row=7, column=0, sticky="ew", padx=20, pady=(0, 10))
         self.frame_patrimonio.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
             self.frame_patrimonio,
@@ -424,14 +463,18 @@ class AppBTC(ctk.CTk):
         self.frame_baixo.grid_rowconfigure(0, weight=1)
 
         # Card trades
-        self.card_trades = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
+        self.card_trades = ctk.CTkFrame(
+            self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10
+        )
         self.card_trades.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         self.card_trades.grid_columnconfigure((0, 1), weight=1)
         self.card_trades.grid_rowconfigure(2, weight=1)
 
         ctk.CTkLabel(
-            self.card_trades, text="ÚLTIMOS TRADES",
-            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+            self.card_trades,
+            text="ÚLTIMOS TRADES",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, sticky="w", padx=15, pady=(10, 5))
         ctk.CTkButton(
             self.card_trades,
@@ -444,10 +487,12 @@ class AppBTC(ctk.CTk):
         ).grid(row=0, column=1, sticky="e", padx=15, pady=(8, 4))
 
         self.txt_trades = ctk.CTkTextbox(
-            self.card_trades, font=FONTE_PEQUENA,
+            self.card_trades,
+            font=FONTE_PEQUENA,
             fg_color=CORES["bg_secundario"],
             text_color=CORES["texto_primario"],
-            border_width=0, wrap="none"
+            border_width=0,
+            wrap="none",
         )
         self.txt_trades.grid(
             row=2, column=0, columnspan=2, sticky="nsew", padx=15, pady=(0, 15)
@@ -455,12 +500,16 @@ class AppBTC(ctk.CTk):
         self.txt_trades.configure(state="disabled")
 
         # Card métricas
-        self.card_metricas = ctk.CTkFrame(self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10)
+        self.card_metricas = ctk.CTkFrame(
+            self.frame_baixo, fg_color=CORES["bg_card"], corner_radius=10
+        )
         self.card_metricas.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         self.card_metricas.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(
-            self.card_metricas, text="MÉTRICAS",
-            font=FONTE_SUBTITULO, text_color=CORES["verde_pastel"]
+            self.card_metricas,
+            text="MÉTRICAS",
+            font=FONTE_SUBTITULO,
+            text_color=CORES["verde_pastel"],
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=15, pady=(10, 5))
 
         self.metricas_labels = {}
@@ -485,20 +534,26 @@ class AppBTC(ctk.CTk):
 
         for i, (chave, rotulo) in enumerate(linhas_metricas, start=1):
             ctk.CTkLabel(
-                self.card_metricas, text=f"{rotulo}:",
-                font=FONTE_LABEL, text_color=CORES["texto_secundario"]
+                self.card_metricas,
+                text=f"{rotulo}:",
+                font=FONTE_LABEL,
+                text_color=CORES["texto_secundario"],
             ).grid(row=i, column=0, sticky="w", padx=(15, 10), pady=2)
             lbl = ctk.CTkLabel(
-                self.card_metricas, text="—",
-                font=FONTE_LABEL, text_color=CORES["texto_primario"]
+                self.card_metricas,
+                text="—",
+                font=FONTE_LABEL,
+                text_color=CORES["texto_primario"],
             )
             lbl.grid(row=i, column=1, sticky="w", padx=(0, 15), pady=2)
             self.metricas_labels[chave] = lbl
 
         # ----- Status -----
         self.lbl_status = ctk.CTkLabel(
-            self, text="Iniciando...",
-            font=FONTE_PEQUENA, text_color=CORES["texto_apagado"]
+            self,
+            text="Iniciando...",
+            font=FONTE_PEQUENA,
+            text_color=CORES["texto_apagado"],
         )
         self.lbl_status.grid(row=1, column=0, sticky="ew", padx=16, pady=(4, 8))
         self.bind("<Configure>", self._ajustar_largura_textos, add="+")
@@ -615,7 +670,10 @@ class AppBTC(ctk.CTk):
         ).pack(anchor="w")
 
         lbl = ctk.CTkLabel(
-            frame, text=valor, font=FONTE_VALOR_MEDIO, text_color=CORES["texto_primario"]
+            frame,
+            text=valor,
+            font=FONTE_VALOR_MEDIO,
+            text_color=CORES["texto_primario"],
         )
         lbl.pack(anchor="w")
         return lbl
@@ -648,16 +706,13 @@ class AppBTC(ctk.CTk):
                 continue
         for callback_id in callback_ids:
             try:
-                script = self.tk.splitlist(
-                    self.tk.call("after", "info", callback_id)
-                )[0]
+                script = self.tk.splitlist(self.tk.call("after", "info", callback_id))[
+                    0
+                ]
             except (RuntimeError, TclError):
                 continue
             owner = next(
-                (
-                    widget for widget in widgets
-                    if script in (widget._tclCommands or ())
-                ),
+                (widget for widget in widgets if script in (widget._tclCommands or ())),
                 None,
             )
             if owner is not None:
@@ -753,9 +808,7 @@ class AppBTC(ctk.CTk):
             with open(destino, "w", encoding="utf-8-sig", newline="") as arquivo:
                 arquivo.write(csv_texto)
         except OSError as exc:
-            messagebox.showerror(
-                "Não foi possível exportar", str(exc), parent=self
-            )
+            messagebox.showerror("Não foi possível exportar", str(exc), parent=self)
             return
         messagebox.showinfo(
             "Exportação concluída",
@@ -783,18 +836,18 @@ class AppBTC(ctk.CTk):
         if self._backtest_em_execucao:
             return
         with self.motor.lock:
-            preco = (
-                self.motor.preco_atual
-                if self.motor.preco_atualizado else None
-            )
+            preco = self.motor.preco_atual if self.motor.preco_atualizado else None
             capital = (
-                self.motor.estado.capital_brl
-                + self.motor.estado.capital_btc * preco
-                if preco is not None else 0.0
+                self.motor.estado.capital_brl + self.motor.estado.capital_btc * preco
+                if preco is not None
+                else 0.0
             )
         if capital <= 0:
             self.lbl_backtest_status.configure(
-                text="Backtest indisponível: aguarde cotação online e patrimônio válido.",
+                text=(
+                    "Backtest indisponível: aguarde cotação online "
+                    "e patrimônio válido."
+                ),
                 text_color=CORES["amarelo_pastel"],
             )
             return
@@ -831,8 +884,13 @@ class AppBTC(ctk.CTk):
                 history = buscar_historico_btc_brl_periodo(dias)
                 result = simular_backtest(history, capital)
             except (
-                RequestException, OSError, RuntimeError, ValueError,
-                KeyError, TypeError, IndexError,
+                RequestException,
+                OSError,
+                RuntimeError,
+                ValueError,
+                KeyError,
+                TypeError,
+                IndexError,
             ) as exc:
                 self._backtest_resultados.put((None, str(exc), periodo_texto))
             else:
@@ -880,8 +938,11 @@ class AppBTC(ctk.CTk):
         eixo.grid(True, alpha=0.16, color=CORES["verde_matrix"])
         eixo.plot(datas, estrategia, color=CORES["verde_matrix"], label="Estratégia")
         eixo.plot(
-            datas, buy_hold, color=CORES["azul_pastel"],
-            linestyle="--", label="Buy-and-hold",
+            datas,
+            buy_hold,
+            color=CORES["azul_pastel"],
+            linestyle="--",
+            label="Buy-and-hold",
         )
         eixo.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m", tz=FUSO_LOCAL))
         eixo.xaxis.set_major_locator(
@@ -891,7 +952,9 @@ class AppBTC(ctk.CTk):
             FuncFormatter(lambda value, pos: f"R$ {value / 1000:.0f} mil")
         )
         eixo.legend(
-            loc="upper left", fontsize=8, frameon=False,
+            loc="upper left",
+            fontsize=8,
+            frameon=False,
             labelcolor=CORES["texto_secundario"],
         )
         for spine in eixo.spines.values():
@@ -901,13 +964,15 @@ class AppBTC(ctk.CTk):
         diferenca = resultado["final_strategy_brl"] - resultado["final_buy_hold_brl"]
         self.lbl_backtest_status.configure(
             text=(
-                f"{periodo}: estratégia R$ {formatar_reais(resultado['final_strategy_brl'])} "
+                f"{periodo}: estratégia R$ "
+                f"{formatar_reais(resultado['final_strategy_brl'])} "
                 f"({resultado['strategy_return_pct']:+.2f}%) · "
                 f"buy-and-hold R$ {formatar_reais(resultado['final_buy_hold_brl'])} "
                 f"({resultado['buy_hold_return_pct']:+.2f}%) · "
                 f"diferença R$ {formatar_reais(diferenca, sinal=True)} · "
                 f"{resultado['trade_count']} operações. "
-                "Capital simulado 50% BTC/50% caixa; resultado passado não prevê retorno."
+                "Capital simulado 50% BTC/50% caixa; resultado passado "
+                "não prevê retorno."
             ),
             text_color=CORES["texto_secundario"],
         )
@@ -930,6 +995,7 @@ class AppBTC(ctk.CTk):
             Cria/reconfigura label, toca campainha, cancela toast anterior e
             agenda o desaparecimento após sete segundos.
         """
+
         def criar_toast():
             """Cria um label novo para exibir a notificação.
 
@@ -1045,9 +1111,7 @@ class AppBTC(ctk.CTk):
                 inteiro, centavos = texto.split(",", 1)
                 if len(centavos) not in (1, 2):
                     raise ValueError("Informe no máximo duas casas decimais em reais.")
-                if "." in inteiro and not re.fullmatch(
-                    r"\d{1,3}(?:\.\d{3})+", inteiro
-                ):
+                if "." in inteiro and not re.fullmatch(r"\d{1,3}(?:\.\d{3})+", inteiro):
                     raise ValueError("Separadores de milhar inválidos.")
                 if "." not in inteiro and inteiro and not inteiro.isdigit():
                     raise ValueError("Informe um valor em reais válido.")
@@ -1282,17 +1346,20 @@ class AppBTC(ctk.CTk):
             self._atualizar_tela(
                 estado, historico, preco, fonte_preco, fluxo_caixa, equity_history
             )
-            novas_operacoes = historico[self._notified_trade_count:]
+            novas_operacoes = historico[self._notified_trade_count :]
             for trade in novas_operacoes:
                 if trade.get("motivo") not in ("manual", "aporte"):
                     self._mostrar_notificacao_trade(trade)
             self._notified_trade_count = len(historico)
             ts = (
                 self._para_horario_local(ultimo_update).strftime("%d/%m %H:%M:%S")
-                if ultimo_update else "—"
+                if ultimo_update
+                else "—"
             )
             if preco_atualizado:
-                status = f"● Cotação atualizada: {ts} (Carambeí)  |  Fonte: {fonte_preco}"
+                status = (
+                    f"● Cotação atualizada: {ts} (Carambeí)  |  Fonte: {fonte_preco}"
+                )
                 cor_status = CORES["verde_matrix"]
             else:
                 status = (
@@ -1310,7 +1377,7 @@ class AppBTC(ctk.CTk):
         else:
             self.lbl_status.configure(
                 text=f"⏳ Aguardando cotação online. {ultimo_erro}",
-                text_color=CORES["amarelo_pastel"]
+                text_color=CORES["amarelo_pastel"],
             )
 
         chave_graficos = (
@@ -1394,9 +1461,7 @@ class AppBTC(ctk.CTk):
                     )
                 )
             )
-            ax.xaxis.set_major_formatter(
-                mdates.DateFormatter("%H:%M", tz=FUSO_LOCAL)
-            )
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=FUSO_LOCAL))
             ax.xaxis.set_major_locator(
                 mdates.AutoDateLocator(minticks=3, maxticks=4, tz=FUSO_LOCAL)
             )
@@ -1406,35 +1471,54 @@ class AppBTC(ctk.CTk):
 
         ax_real.set_title(
             "COTAÇÃO REAL · ÚLTIMAS 24H",
-            color=CORES["verde_pastel"], fontsize=10, loc="left",
+            color=CORES["verde_pastel"],
+            fontsize=10,
+            loc="left",
         )
         if historico:
             horarios = [ts.astimezone(FUSO_LOCAL) for ts, _ in historico]
             valores = [valor for _, valor in historico]
             ax_real.plot(
-                horarios, valores, color=CORES["verde_matrix"],
-                linewidth=1.8, label="BTC/BRL",
+                horarios,
+                valores,
+                color=CORES["verde_matrix"],
+                linewidth=1.8,
+                label="BTC/BRL",
             )
             ax_real.fill_between(
-                horarios, valores, min(valores),
-                color=CORES["verde_matrix"], alpha=0.10,
+                horarios,
+                valores,
+                min(valores),
+                color=CORES["verde_matrix"],
+                alpha=0.10,
             )
             if preco_atual is not None:
                 agora_local = datetime.now(FUSO_LOCAL)
                 ax_real.scatter(
-                    [agora_local], [preco_atual], color=CORES["amarelo_pastel"],
-                    s=24, zorder=3, label="último preço",
+                    [agora_local],
+                    [preco_atual],
+                    color=CORES["amarelo_pastel"],
+                    s=24,
+                    zorder=3,
+                    label="último preço",
                 )
         else:
             ax_real.text(
-                0.5, 0.5, "Histórico indisponível",
-                ha="center", va="center", color=CORES["texto_apagado"],
+                0.5,
+                0.5,
+                "Histórico indisponível",
+                ha="center",
+                va="center",
+                color=CORES["texto_apagado"],
                 transform=ax_real.transAxes,
             )
 
         ax_previsao.set_title(
             "CENÁRIO ESTIMADO · PRÓXIMAS 24H",
-            color=CORES["verde_pastel"], fontsize=10, loc="left", pad=9,
+            color=CORES["verde_pastel"],
+            fontsize=10,
+            loc="left",
+            pad=9,
         )
         if previsao:
             previsao_local = [p.timestamp.astimezone(FUSO_LOCAL) for p in previsao]
@@ -1444,8 +1528,7 @@ class AppBTC(ctk.CTk):
 
             if historico:
                 contexto = [
-                    (ts.astimezone(FUSO_LOCAL), valor)
-                    for ts, valor in historico[-6:]
+                    (ts.astimezone(FUSO_LOCAL), valor) for ts, valor in historico[-6:]
                 ]
                 ax_previsao.plot(
                     [item[0] for item in contexto],
@@ -1457,42 +1540,58 @@ class AppBTC(ctk.CTk):
                     zorder=2,
                 )
             ax_previsao.fill_between(
-                previsao_local, minimos, maximos,
+                previsao_local,
+                minimos,
+                maximos,
                 color=CORES["azul_pastel"],
                 alpha=0.20,
                 label="faixa estimada",
                 zorder=1,
             )
             preco_final = esperados[-1]
-            variacao = (
-                (preco_final / preco_atual - 1) * 100
-                if preco_atual else 0.0
-            )
+            variacao = (preco_final / preco_atual - 1) * 100 if preco_atual else 0.0
             cor_cenario = (
-                CORES["lucro"] if variacao > 0
-                else CORES["prejuizo"] if variacao < 0
+                CORES["lucro"]
+                if variacao > 0
+                else CORES["prejuizo"]
+                if variacao < 0
                 else CORES["azul_pastel"]
             )
             ax_previsao.plot(
-                previsao_local, esperados, color=cor_cenario,
-                linewidth=2.4, label="cenário central",
+                previsao_local,
+                esperados,
+                color=cor_cenario,
+                linewidth=2.4,
+                label="cenário central",
                 zorder=3,
             )
             inicio = previsao_local[0]
             fim = previsao_local[-1]
             ax_previsao.axvline(
-                inicio, color=CORES["amarelo_pastel"],
-                linewidth=1, linestyle="--", alpha=0.8,
+                inicio,
+                color=CORES["amarelo_pastel"],
+                linewidth=1,
+                linestyle="--",
+                alpha=0.8,
             )
             if preco_atual is not None:
                 ax_previsao.scatter(
-                    [inicio], [preco_atual], color=CORES["amarelo_pastel"],
-                    edgecolors=CORES["bg_secundario"], linewidths=0.7,
-                    s=42, zorder=5, label="agora",
+                    [inicio],
+                    [preco_atual],
+                    color=CORES["amarelo_pastel"],
+                    edgecolors=CORES["bg_secundario"],
+                    linewidths=0.7,
+                    s=42,
+                    zorder=5,
+                    label="agora",
                 )
             ax_previsao.scatter(
-                [fim], [preco_final], color=cor_cenario, s=34,
-                edgecolors=CORES["bg_secundario"], linewidths=0.7,
+                [fim],
+                [preco_final],
+                color=cor_cenario,
+                s=34,
+                edgecolors=CORES["bg_secundario"],
+                linewidths=0.7,
                 zorder=5,
             )
             ax_previsao.annotate(
@@ -1505,10 +1604,7 @@ class AppBTC(ctk.CTk):
                 fontsize=8,
                 fontweight="bold",
             )
-            inicio_contexto = (
-                contexto[0][0]
-                if historico and contexto else inicio
-            )
+            inicio_contexto = contexto[0][0] if historico and contexto else inicio
             ax_previsao.set_xlim(inicio_contexto, fim)
             ax_previsao.xaxis.set_major_formatter(
                 mdates.DateFormatter("%Hh", tz=FUSO_LOCAL)
@@ -1520,7 +1616,10 @@ class AppBTC(ctk.CTk):
                 "horário local", color=CORES["texto_secundario"], fontsize=8
             )
             ax_previsao.legend(
-                loc="upper left", ncol=1, fontsize=7, frameon=False,
+                loc="upper left",
+                ncol=1,
+                fontsize=7,
+                frameon=False,
                 labelcolor=CORES["texto_secundario"],
             )
             ax_previsao.margins(y=0.18)
@@ -1532,8 +1631,7 @@ class AppBTC(ctk.CTk):
             )
             cor_previsao_status = cor_cenario
             faixa_total_pct = (
-                (maximos[-1] - minimos[-1]) / preco_atual * 100
-                if preco_atual else 0.0
+                (maximos[-1] - minimos[-1]) / preco_atual * 100 if preco_atual else 0.0
             )
             detalhe_cenario = (
                 f"Referência atual: R$ {formatar_reais(preco_atual or 0)}  ·  "
@@ -1542,9 +1640,13 @@ class AppBTC(ctk.CTk):
             )
         else:
             ax_previsao.text(
-                0.5, 0.5,
-                "Ainda não há dados horários suficientes\npara estimar as próximas 24h.",
-                ha="center", va="center", color=CORES["texto_apagado"],
+                0.5,
+                0.5,
+                "Ainda não há dados horários suficientes\n"
+                "para estimar as próximas 24h.",
+                ha="center",
+                va="center",
+                color=CORES["texto_apagado"],
                 transform=ax_previsao.transAxes,
             )
             eixo_previsao_status = "CENÁRIO DE 24H INDISPONÍVEL"
@@ -1560,21 +1662,26 @@ class AppBTC(ctk.CTk):
         self.canvas_graficos.draw_idle()
 
         if atualizado_analistas:
-            horario_analistas = atualizado_analistas.astimezone(
-                FUSO_LOCAL
-            ).strftime("%d/%m %H:%M")
+            horario_analistas = atualizado_analistas.astimezone(FUSO_LOCAL).strftime(
+                "%d/%m %H:%M"
+            )
         else:
             horario_analistas = "sem atualização"
         if atualizado_mercado:
-            horario_mercado = atualizado_mercado.astimezone(
-                FUSO_LOCAL
-            ).strftime("%d/%m %H:%M")
+            horario_mercado = atualizado_mercado.astimezone(FUSO_LOCAL).strftime(
+                "%d/%m %H:%M"
+            )
         else:
             horario_mercado = "sem histórico"
-        direcao = "positivo" if sentimento > 0.05 else "negativo" if sentimento < -0.05 else "neutro"
+        direcao = (
+            "positivo"
+            if sentimento > 0.05
+            else "negativo"
+            if sentimento < -0.05
+            else "neutro"
+        )
         analises_direcionais = sum(
-            article.analyst_view and article.sentiment != 0
-            for article in artigos
+            article.analyst_view and article.sentiment != 0 for article in artigos
         )
         sentimento_texto = (
             f"sinal das análises de analistas {direcao} ({sentimento:+.2f}, "
@@ -1586,12 +1693,15 @@ class AppBTC(ctk.CTk):
                 f"{analises_direcionais} análise(s) direcional(is) de analistas · "
                 f"sinal agregado {direcao} ({sentimento:+.2f}) · "
                 f"atualizado: {horario_analistas}. "
-                "Amostra limitada aos feeds e últimas 24h; leitura lexical, não consenso."
+                "Amostra limitada aos feeds e últimas 24h; "
+                "leitura lexical, não consenso."
                 + (f" Aviso da consulta: {erro}" if erro and not artigos else "")
             ),
             text_color=(
-                CORES["lucro"] if sentimento > 0.05
-                else CORES["prejuizo"] if sentimento < -0.05
+                CORES["lucro"]
+                if sentimento > 0.05
+                else CORES["prejuizo"]
+                if sentimento < -0.05
                 else CORES["texto_secundario"]
             ),
         )
@@ -1625,19 +1735,16 @@ class AppBTC(ctk.CTk):
                 text_color=CORES["texto_apagado"],
                 anchor="w",
             )
-            mensagem_fontes.grid(
-                row=0, column=0, sticky="ew", padx=5
-            )
+            mensagem_fontes.grid(row=0, column=0, sticky="ew", padx=5)
             self.widgets_fontes_analistas.append(mensagem_fontes)
         else:
             for index, article in enumerate(artigos[:5]):
-                publicado = article.published_at.astimezone(
-                    FUSO_LOCAL
-                ).strftime("%d/%m %H:%M")
+                publicado = article.published_at.astimezone(FUSO_LOCAL).strftime(
+                    "%d/%m %H:%M"
+                )
                 if article.analyst_view and article.sentiment:
                     classificacao = (
-                        "ANÁLISE DE ANALISTA · "
-                        f"tom lexical {article.sentiment:+.2f}"
+                        f"ANÁLISE DE ANALISTA · tom lexical {article.sentiment:+.2f}"
                     )
                 elif article.sentiment:
                     classificacao = (
@@ -1677,11 +1784,13 @@ class AppBTC(ctk.CTk):
         if fluxo_key != self._cache_fluxo_key:
             self._cache_depositos = sum(
                 float(item["valor_brl"])
-                for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
+                for item in fluxo_caixa
+                if item["tipo"] == "DEPOSITO"
             )
             self._cache_saques = sum(
                 float(item["valor_brl"])
-                for item in fluxo_caixa if item["tipo"] == "SAQUE"
+                for item in fluxo_caixa
+                if item["tipo"] == "SAQUE"
             )
             self._cache_fluxo_key = fluxo_key
         return self._cache_depositos, self._cache_saques
@@ -1722,27 +1831,22 @@ class AppBTC(ctk.CTk):
         lucro = patrimonio - capital_aportado
         lucro_pct = (lucro / capital_aportado * 100) if capital_aportado > 0 else 0
 
-        self.card_preco.lbl_valor.configure(
-            text=f"R$ {formatar_reais(preco)}"
-        )
+        self.card_preco.lbl_valor.configure(text=f"R$ {formatar_reais(preco)}")
         self.card_preco.lbl_var.configure(
             text=f"fonte: {fonte_preco}", text_color=CORES["texto_secundario"]
         )
 
         cor_patrimonio = CORES["lucro"] if lucro >= 0 else CORES["prejuizo"]
         self.card_patrimonio.lbl_valor.configure(
-            text=f"R$ {formatar_reais(patrimonio)}",
-            text_color=CORES["texto_primario"]
+            text=f"R$ {formatar_reais(patrimonio)}", text_color=CORES["texto_primario"]
         )
         self.card_patrimonio.lbl_var.configure(
             text=f"{'▲' if lucro >= 0 else '▼'} {lucro_pct:+.2f}%  "
-                 f"(R$ {formatar_reais(lucro, sinal=True)})",
-            text_color=cor_patrimonio
+            f"(R$ {formatar_reais(lucro, sinal=True)})",
+            text_color=cor_patrimonio,
         )
 
-        self.lbl_brl.configure(
-            text=f"R$ {formatar_reais(capital_brl)}"
-        )
+        self.lbl_brl.configure(text=f"R$ {formatar_reais(capital_brl)}")
         self.lbl_btc.configure(text=f"{capital_btc:.8f}")
 
         if preco_medio > 0:
@@ -1750,7 +1854,7 @@ class AppBTC(ctk.CTk):
             cor_pm = CORES["lucro"] if var_pm >= 0 else CORES["prejuizo"]
             self.lbl_preco_medio.configure(
                 text=f"R$ {formatar_reais(preco_medio)}",
-                text_color=CORES["texto_primario"]
+                text_color=CORES["texto_primario"],
             )
             self.lbl_variacao.configure(text=f"{var_pm:+.2f}%", text_color=cor_pm)
         else:
@@ -1765,19 +1869,17 @@ class AppBTC(ctk.CTk):
         self.metricas_labels["depositos"].configure(
             text=f"R$ {formatar_reais(depositos)}"
         )
-        self.metricas_labels["saques"].configure(
-            text=f"R$ {formatar_reais(saques)}"
-        )
+        self.metricas_labels["saques"].configure(text=f"R$ {formatar_reais(saques)}")
         self.metricas_labels["capital_aportado"].configure(
             text=f"R$ {formatar_reais(capital_aportado)}"
         )
         self.metricas_labels["lucro"].configure(
             text=f"R$ {formatar_reais(lucro, sinal=True)}",
-            text_color=CORES["lucro"] if lucro >= 0 else CORES["prejuizo"]
+            text_color=CORES["lucro"] if lucro >= 0 else CORES["prejuizo"],
         )
         self.metricas_labels["rentabilidade"].configure(
             text=f"{lucro_pct:+.2f}%",
-            text_color=CORES["lucro"] if lucro_pct >= 0 else CORES["prejuizo"]
+            text_color=CORES["lucro"] if lucro_pct >= 0 else CORES["prejuizo"],
         )
         metricas_key = (
             len(historico),
@@ -1787,9 +1889,7 @@ class AppBTC(ctk.CTk):
             equity_history[-1].get("nav") if equity_history else None,
         )
         if metricas_key != self._metricas_cache_key:
-            self._metricas_cache = calcular_metricas_risco(
-                historico, equity_history
-            )
+            self._metricas_cache = calcular_metricas_risco(historico, equity_history)
             self._metricas_cache_key = metricas_key
         metricas = self._metricas_cache
         drawdown = metricas["max_drawdown_pct"]
@@ -1809,14 +1909,16 @@ class AppBTC(ctk.CTk):
         )
         self.metricas_labels["profit_factor"].configure(
             text=(
-                "∞" if profit_factor == float("inf")
-                else f"{profit_factor:.2f}" if profit_factor is not None else "—"
+                "∞"
+                if profit_factor == float("inf")
+                else f"{profit_factor:.2f}"
+                if profit_factor is not None
+                else "—"
             )
         )
         self.metricas_labels["holding_time"].configure(
             text=(
-                f"{holding_hours / 24:.1f} dias"
-                if holding_hours is not None else "—"
+                f"{holding_hours / 24:.1f} dias" if holding_hours is not None else "—"
             )
         )
         self.metricas_labels["exposure"].configure(
@@ -1858,17 +1960,23 @@ class AppBTC(ctk.CTk):
 
         if not equity_history:
             eixo.text(
-                0.5, 0.5, "Curva começa a ser registrada a partir da primeira cotação.",
-                ha="center", va="center", color=CORES["texto_apagado"],
+                0.5,
+                0.5,
+                "Curva começa a ser registrada a partir da primeira cotação.",
+                ha="center",
+                va="center",
+                color=CORES["texto_apagado"],
                 transform=eixo.transAxes,
             )
             self.lbl_patrimonio_status.configure(
-                text="Sem amostras registradas ainda; a primeira será salva na próxima cotação."
+                text=(
+                    "Sem amostras registradas ainda; a primeira será "
+                    "salva na próxima cotação."
+                )
             )
         else:
             timestamps = [
-                self._para_horario_local(point["timestamp"])
-                for point in equity_history
+                self._para_horario_local(point["timestamp"]) for point in equity_history
             ]
             if __debug__:
                 assert timestamps == sorted(timestamps), (
@@ -1888,15 +1996,22 @@ class AppBTC(ctk.CTk):
                 plot_values = [values[index] for index in sample_indices]
                 plot_benchmark = [benchmark[index] for index in sample_indices]
             eixo.plot(
-                plot_timestamps, plot_values, color=CORES["verde_matrix"],
-                linewidth=1.8, marker="o",
+                plot_timestamps,
+                plot_values,
+                color=CORES["verde_matrix"],
+                linewidth=1.8,
+                marker="o",
                 markevery=max(1, len(plot_timestamps) // 20),
                 markersize=7 if len(plot_timestamps) == 1 else 3.5,
                 label="Estratégia",
             )
             eixo.plot(
-                plot_timestamps, plot_benchmark, color=CORES["azul_pastel"],
-                linestyle="--", linewidth=1.4, marker="s",
+                plot_timestamps,
+                plot_benchmark,
+                color=CORES["azul_pastel"],
+                linestyle="--",
+                linewidth=1.4,
+                marker="s",
                 markevery=max(1, len(plot_timestamps) // 20),
                 markersize=6 if len(plot_timestamps) == 1 else 3,
                 label="Buy-and-hold BTC",
@@ -1923,7 +2038,8 @@ class AppBTC(ctk.CTk):
                 self.lbl_patrimonio_status.configure(
                     text=(
                         f"1 amostra registrada em {timestamps[0]:%d/%m %H:%M}. "
-                        "A linha evolutiva ficará visível após as próximas atualizações horárias."
+                        "A linha evolutiva ficará visível após as próximas "
+                        "atualizações horárias."
                     )
                 )
             else:
@@ -1940,9 +2056,9 @@ class AppBTC(ctk.CTk):
                     index = bisect_left(timestamps, trade_time)
                     if index >= len(timestamps):
                         index = len(timestamps) - 1
-                    elif index > 0 and (
-                        trade_time - timestamps[index - 1]
-                    ) <= (timestamps[index] - trade_time):
+                    elif index > 0 and (trade_time - timestamps[index - 1]) <= (
+                        timestamps[index] - trade_time
+                    ):
                         index -= 1
                 except (KeyError, TypeError, ValueError):
                     continue
@@ -1950,10 +2066,12 @@ class AppBTC(ctk.CTk):
                     continue
                 is_buy = str(trade.get("tipo", "")).upper() == "COMPRA"
                 eixo.scatter(
-                    [timestamps[index]], [values[index]],
+                    [timestamps[index]],
+                    [values[index]],
                     marker="^" if is_buy else "v",
                     color=CORES["verde_matrix"] if is_buy else CORES["prejuizo"],
-                    s=32, zorder=4,
+                    s=32,
+                    zorder=4,
                 )
             if len(timestamps) > 1:
                 eixo.xaxis.set_major_formatter(
@@ -1966,7 +2084,9 @@ class AppBTC(ctk.CTk):
                 FuncFormatter(lambda value, pos: f"R$ {value / 1000:.0f} mil")
             )
             eixo.legend(
-                loc="upper left", fontsize=8, frameon=False,
+                loc="upper left",
+                fontsize=8,
+                frameon=False,
                 labelcolor=CORES["texto_secundario"],
             )
             self.fig_patrimonio.subplots_adjust(
@@ -2013,7 +2133,7 @@ class AppBTC(ctk.CTk):
                 self.txt_trades.insert(
                     "end",
                     f"{sinal} {ts:<19}  {motivo:<14}  "
-                    f"R$ {formatar_reais(valor):>10}  @ R$ {formatar_reais(preco)}\n"
+                    f"R$ {formatar_reais(valor):>10}  @ R$ {formatar_reais(preco)}\n",
                 )
 
         self.txt_trades.configure(state="disabled")

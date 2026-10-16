@@ -20,6 +20,7 @@ class Trade:
         motivo: Origem da operação, como ``"manual"``, ``"aporte"``,
             ``"compra_extra"``, ``"take_profit"`` ou ``"stop_loss"``.
     """
+
     timestamp: str
     tipo: str
     preco_brl: float
@@ -49,6 +50,7 @@ class CashFlow:
         tipo: Direção do fluxo, ``"DEPOSITO"`` ou ``"SAQUE"``.
         valor_brl: Valor movimentado em reais (BRL), sempre positivo.
     """
+
     timestamp: str
     tipo: str
     valor_brl: float
@@ -87,12 +89,13 @@ class Estado:
         patrimonio_inicial_brl: Capital inicial usado como referência de
             resultado, em reais.
     """
+
     capital_brl: float = 0.0
     capital_btc: float = 0.0
     preco_medio_brl: float = 0.0
-    ultima_compra_ts: str = ""          # timestamp da última compra
+    ultima_compra_ts: str = ""  # timestamp da última compra
     ultimo_preco_compra_brl: float = 0.0
-    ultimo_aporte_ts: str = ""          # mantido para ler estados antigos
+    ultimo_aporte_ts: str = ""  # mantido para ler estados antigos
     take_profit_executado: bool = False
     stop_loss_executado: bool = False
     total_compras: int = 0
