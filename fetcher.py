@@ -28,6 +28,14 @@ CACHE_FILE = os.path.join(CONFIG["cache_dir"], "last_price.json")
 
 @dataclass(frozen=True)
 class Cotacao:
+    """Cotação de BTC em reais e metadados de origem/atualidade.
+
+    Attributes:
+        preco_brl: Preço do BTC em BRL/BTC.
+        fonte: Nome da fonte online ou indicação do cache.
+        timestamp: Instante da cotação como datetime com fuso.
+        atual: ``True`` somente para resposta obtida online nesta consulta.
+    """
     preco_brl: float
     fonte: str
     timestamp: datetime
@@ -38,7 +46,19 @@ class Cotacao:
 # Fonte 1: CoinGecko (preferida)
 # ---------------------------------------------------------------------------
 def buscar_coingecko() -> float | None:
-    """Retorna o preço do BTC em BRL via CoinGecko, ou None se falhar."""
+    """Obtém o preço spot BTC/BRL na CoinGecko.
+
+    Returns:
+        float | None: Preço positivo em BRL/BTC ou ``None`` se a consulta,
+        resposta ou valor retornado for inválido.
+
+    Raises:
+        Nenhuma exceção de rede ou parsing é propagada; falhas previstas são
+        reportadas no console e convertidas em ``None``.
+
+    Side Effects:
+        Faz uma requisição HTTP com timeout de 10 segundos e pode imprimir aviso.
+    """
     try:
         response = requests.get(COINGECKO_URL, timeout=10)
         response.raise_for_status()
@@ -56,7 +76,18 @@ def buscar_coingecko() -> float | None:
 # Fonte 2: Binance (fallback)
 # ---------------------------------------------------------------------------
 def buscar_binance() -> float | None:
-    """Retorna o preço do BTC em BRL diretamente do par BTCBRL da Binance."""
+    """Obtém o preço spot do par BTC/BRL na Binance.
+
+    Returns:
+        float | None: Preço positivo em BRL/BTC ou ``None`` em falha prevista.
+
+    Raises:
+        Nenhuma exceção de rede ou parsing é propagada; falhas previstas são
+        reportadas no console e convertidas em ``None``.
+
+    Side Effects:
+        Faz uma requisição HTTP com timeout de 10 segundos e pode imprimir aviso.
+    """
     try:
         response = requests.get(BINANCE_URL, timeout=10)
         response.raise_for_status()
@@ -74,7 +105,18 @@ def buscar_binance() -> float | None:
 # Fonte 3: cache local
 # ---------------------------------------------------------------------------
 def ler_cache() -> Cotacao | None:
-    """Lê o último preço salvo em cache, identificando-o como desatualizado."""
+    """Lê o cache local e marca a cotação como desatualizada.
+
+    Returns:
+        Cotacao | None: Valor válido do cache com timestamp salvo (ou mtime),
+        ``atual=False``; retorna ``None`` se ausente ou inválido.
+
+    Raises:
+        Nenhuma exceção de leitura ou parsing do JSON é propagada.
+
+    Side Effects:
+        Lê ``data/last_price.json``; não altera arquivos.
+    """
     if os.path.exists(CACHE_FILE):
         try:
             with open(CACHE_FILE, "r", encoding="utf-8") as f:
@@ -102,7 +144,23 @@ def ler_cache() -> Cotacao | None:
 
 
 def salvar_cache(preco_brl: float, fonte: str, timestamp: datetime) -> None:
-    """Salva o preço atual em cache local."""
+    """Grava a cotação online mais recente no cache JSON.
+
+    Args:
+        preco_brl: Preço em BRL/BTC.
+        fonte: Nome da fonte que forneceu o preço.
+        timestamp: Instante da cotação, preferencialmente timezone-aware.
+
+    Returns:
+        None.
+
+    Raises:
+        OSError: Se não for possível criar o diretório ou escrever o arquivo.
+        TypeError: Se algum valor não puder ser serializado em JSON.
+
+    Side Effects:
+        Cria o diretório de cache se necessário e sobrescreve ``last_price.json``.
+    """
     os.makedirs(CONFIG["cache_dir"], exist_ok=True)
     with open(CACHE_FILE, "w", encoding="utf-8") as f:
         json.dump({
@@ -117,8 +175,20 @@ def salvar_cache(preco_brl: float, fonte: str, timestamp: datetime) -> None:
 # ---------------------------------------------------------------------------
 def buscar_cotacao_btc_brl() -> Cotacao:
     """
-    Retorna preço, fonte, horário e se a cotação é atual.
-    A cotação em cache é somente informativa e não deve disparar operações.
+    Busca cotação em CoinGecko, Binance e, por último, no cache local.
+
+    Returns:
+        Cotacao: Preço, origem, timestamp UTC e indicador de atualidade.
+
+    Raises:
+        RuntimeError: Se as duas fontes online falharem e não houver cache válido.
+        OSError: Se a gravação do cache de uma cotação online falhar.
+        TypeError: Se dados válidos para cotação não puderem ser serializados.
+
+    Side Effects:
+        Faz até duas requisições HTTP; uma cotação online atualiza
+        ``data/last_price.json``. Uma cotação do cache é apenas informativa e
+        gera aviso no console.
     """
     # 1. CoinGecko
     preco = buscar_coingecko()
@@ -144,7 +214,19 @@ def buscar_cotacao_btc_brl() -> Cotacao:
 
 
 def buscar_preco_btc_brl() -> float:
-    """Compatibilidade com chamadas que precisam somente do valor em BRL."""
+    """Obtém somente o preço BTC/BRL, preservando a API legada.
+
+    Returns:
+        float: Preço em BRL/BTC.
+
+    Raises:
+        RuntimeError: Se nenhuma fonte online nem cache válido estiver disponível.
+        OSError: Se a gravação do cache de preço online falhar.
+
+    Side Effects:
+        Herda as requisições e possíveis atualizações de cache de
+        :func:`buscar_cotacao_btc_brl`.
+    """
     return buscar_cotacao_btc_brl().preco_brl
 
 

@@ -8,6 +8,20 @@ from statistics import fmean, median, stdev
 
 
 def _timestamp(value: object) -> datetime | None:
+    """Interpreta timestamp ISO 8601 e normaliza o resultado para UTC.
+
+    Args:
+        value: Valor que deve conter uma string ISO 8601.
+
+    Returns:
+        datetime | None: Instante timezone-aware em UTC ou ``None`` se inválido.
+
+    Raises:
+        Nenhuma exceção de parsing é propagada.
+
+    Side Effects:
+        Nenhum.
+    """
     try:
         parsed = datetime.fromisoformat(str(value))
     except (TypeError, ValueError):
@@ -18,7 +32,24 @@ def _timestamp(value: object) -> datetime | None:
 
 
 def calcular_pnl_realizado(trades: list[dict]) -> list[float | None]:
-    """Calculate per-sale realized P&L using FIFO lots and fees."""
+    """Calcula P&L realizado por trade usando lotes FIFO e taxas de venda.
+
+    Args:
+        trades: Operações em ordem cronológica, com tipo, quantidade BTC,
+            valor BRL bruto, taxa BRL e timestamp ISO 8601.
+
+    Returns:
+        list[float | None]: Resultado alinhado à lista de entrada; compras e
+        vendas sem lote suficiente têm ``None``. Vendas calculáveis retornam
+        P&L líquido em BRL.
+
+    Raises:
+        Nenhuma exceção de conversão de campos é propagada; registros inválidos
+        recebem ``None``.
+
+    Side Effects:
+        Nenhum; os lotes são mantidos apenas em estruturas locais.
+    """
     lots: list[list[object]] = []
     realized: list[float | None] = []
 
@@ -66,7 +97,27 @@ def calcular_metricas_risco(
     trades: list[dict],
     equity_history: list[dict],
 ) -> dict[str, float | None]:
-    """Calculate risk statistics using recorded equity and realized FIFO P&L."""
+    """Calcula drawdown, Sharpe, resultados de trades e exposição.
+
+    Args:
+        trades: Histórico de operações com quantidades BTC, valores BRL,
+            taxas e timestamps ISO 8601.
+        equity_history: Amostras contendo NAV, patrimônio, saldo BTC, preço
+            BRL/BTC e timestamp.
+
+    Returns:
+        dict[str, float | None]: Métricas ``max_drawdown_pct``,
+        ``sharpe_ratio``, ``win_rate_pct``, ``profit_factor``,
+        ``average_holding_hours`` e ``average_exposure_pct``. Métricas sem
+        amostras suficientes são ``None``; profit factor pode ser infinito.
+
+    Raises:
+        Nenhuma exceção para campos ausentes ou valores não convertíveis é
+        propagada; tais registros são ignorados nos cálculos aplicáveis.
+
+    Side Effects:
+        Nenhum; listas de entrada não são modificadas.
+    """
     navs = [
         float(point["nav"])
         for point in equity_history
@@ -197,7 +248,22 @@ def calcular_metricas_risco(
 
 
 def gerar_csv_trades(trades: list[dict]) -> str:
-    """Return an Excel-friendly semicolon-delimited CSV with realized P&L."""
+    """Serializa trades e P&L realizado em CSV delimitado por ponto-e-vírgula.
+
+    Args:
+        trades: Operações em ordem cronológica, com os campos usados pelo
+            histórico e cálculo FIFO.
+
+    Returns:
+        str: CSV UTF-8 textual (sem BOM), com cabeçalho e delimitador ``;``.
+
+    Raises:
+        Nenhuma exceção por campo ausente é propagada; campos opcionais ficam
+        vazios.
+
+    Side Effects:
+        Nenhum; não cria arquivo. A gravação é responsabilidade do chamador.
+    """
     pnl_by_trade = calcular_pnl_realizado(trades)
     output = io.StringIO(newline="")
     writer = csv.writer(output, delimiter=";")

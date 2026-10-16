@@ -12,11 +12,21 @@ from models import Estado
 
 def decidir_acao(estado: Estado, preco_brl: float) -> dict:
     """
-    Retorna um dict com a ação a executar:
-      {"acao": "COMPRA", "valor_brl": 300.0, "motivo": "compra_extra"}
-      {"acao": "VENDA", "percentual": 30, "motivo": "take_profit"}
-      {"acao": "VENDA", "percentual": 50, "motivo": "stop_loss"}
-      {"acao": "NADA"}
+    Escolhe uma ação de acordo com o estado e os limites em ``CONFIG``.
+
+    Args:
+        estado: Snapshot do estado atual do simulador.
+        preco_brl: Preço de mercado em BRL/BTC; precisa ser finito e positivo.
+
+    Returns:
+        dict: Ação ``COMPRA`` (com ``valor_brl`` e ``motivo``), ``VENDA``
+        (com ``percentual`` e ``motivo``) ou ``NADA``.
+
+    Raises:
+        ValueError: Se o preço não for finito e positivo.
+
+    Side Effects:
+        Nenhum. Função pura: não altera estado nem faz I/O.
     """
     if not isfinite(preco_brl) or preco_brl <= 0:
         raise ValueError("O preço precisa ser maior que zero.")

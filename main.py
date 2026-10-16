@@ -61,6 +61,21 @@ FUSO_LOCAL = ZoneInfo("America/Sao_Paulo")
 
 
 def formatar_reais(valor: float, sinal: bool = False) -> str:
+    """Formata valor monetário como reais no padrão brasileiro.
+
+    Args:
+        valor: Montante em BRL.
+        sinal: Se verdadeiro, sempre inclui sinal ``+`` ou ``-``.
+
+    Returns:
+        str: Valor com ponto de milhar e vírgula decimal.
+
+    Raises:
+        ValueError: Se o valor não puder ser formatado numericamente.
+
+    Side Effects:
+        Nenhum.
+    """
     formato = f"{valor:+,.2f}" if sinal else f"{valor:,.2f}"
     return formato.replace(",", "X").replace(".", ",").replace("X", ".")
 
@@ -70,7 +85,33 @@ def formatar_reais(valor: float, sinal: bool = False) -> str:
 # =========================================================================
 
 class MotorSimulador:
+    """Coordena cotações, decisões da estratégia, execução e persistência.
+
+    Mantém estado e históricos em memória, executa o ciclo de mercado em uma
+    thread daemon e serializa alterações de estado com ``lock``. Arquivos
+    configurados em ``CONFIG`` são carregados ao inicializar e escritos por
+    substituição atômica durante transações e checkpoints.
+    """
+
     def __init__(self):
+        """Carrega dados, recupera journal pendente e prepara a thread do motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se houver conflito de migração ou falha de recovery.
+            ValueError: Se arquivos JSON existentes estiverem inválidos.
+            OSError: Se operações de migração ou recuperação falharem.
+
+        Side Effects:
+            Pode migrar arquivos legados para ``data/`` e regravar estado,
+            trades ou fluxo de caixa ao recuperar transação pendente. Não inicia
+            a thread até :meth:`iniciar`.
+        """
         self._migrar_arquivos_legados()
         self._recuperar_transacao_trade()
         self.estado = self._carregar_estado()
@@ -78,6 +119,9 @@ class MotorSimulador:
         self.fluxo_caixa = self._carregar_fluxo_caixa()
         self.equity_history = self._carregar_equity()
         self._pending_equity_flow = 0.0
+        self._equity_save_timer = None
+        self._equity_save_requested_at = None
+        self._ultimo_equity_save_at = None
         self.erro_patrimonio = ""
         self.erro_persistencia = ""
         self.preco_atual = None
@@ -98,6 +142,22 @@ class MotorSimulador:
 
     @staticmethod
     def _migrar_arquivos_legados():
+        """Move arquivos legados da raiz do projeto para o diretório de dados.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se existirem cópias legada e atual com conteúdos diferentes.
+            OSError: Se criação, comparação, remoção ou movimentação de arquivos falhar.
+
+        Side Effects:
+            Move os arquivos conhecidos para os caminhos em ``CONFIG``; cópias
+            idênticas legadas são removidas e conflitos preservam ambos os arquivos.
+        """
         diretorio = os.path.dirname(os.path.abspath(__file__))
         for config_key in (
             "state_file",
@@ -125,6 +185,21 @@ class MotorSimulador:
             os.replace(legado, destino)
 
     def _carregar_estado(self) -> Estado:
+        """Carrega estado JSON existente ou cria estado com capital inicial.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            Estado: Estado validado e desserializado.
+
+        Raises:
+            ValueError: Se o arquivo estiver inválido ou não representar um Estado.
+            OSError: É encapsulado em ``ValueError`` com o caminho preservado.
+
+        Side Effects:
+            Lê ``CONFIG["state_file"]``; não grava o arquivo existente.
+        """
         if os.path.exists(CONFIG["state_file"]):
             try:
                 with open(CONFIG["state_file"], "r", encoding="utf-8") as f:
@@ -145,6 +220,21 @@ class MotorSimulador:
         return estado
 
     def _carregar_historico(self):
+        """Carrega e valida a lista de trades persistida.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            list[dict]: Trades carregados, ou lista vazia se o arquivo não existir.
+
+        Raises:
+            ValueError: Se o JSON não for uma lista de objetos.
+            OSError: Se a leitura falhar; convertido em ``ValueError`` contextual.
+
+        Side Effects:
+            Lê ``CONFIG["history_file"]``.
+        """
         if os.path.exists(CONFIG["history_file"]):
             try:
                 with open(CONFIG["history_file"], "r", encoding="utf-8") as f:
@@ -162,6 +252,21 @@ class MotorSimulador:
         return []
 
     def _carregar_fluxo_caixa(self):
+        """Carrega e valida os depósitos e saques persistidos.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            list[dict]: Eventos de fluxo de caixa, ou lista vazia se ausente.
+
+        Raises:
+            ValueError: Se o conteúdo não for uma lista de objetos.
+            OSError: Se a leitura falhar; convertido em ``ValueError`` contextual.
+
+        Side Effects:
+            Lê ``CONFIG["cash_flow_file"]``.
+        """
         if not os.path.exists(CONFIG["cash_flow_file"]):
             return []
         try:
@@ -179,6 +284,21 @@ class MotorSimulador:
             ) from exc
 
     def _carregar_equity(self):
+        """Carrega amostras históricas de patrimônio do arquivo configurado.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            list[dict]: Amostras de equity, ou lista vazia se o arquivo não existir.
+
+        Raises:
+            ValueError: Se o JSON não for uma lista de objetos.
+            OSError: Se a leitura falhar; convertido em ``ValueError`` contextual.
+
+        Side Effects:
+            Lê ``CONFIG["equity_file"]``.
+        """
         path = CONFIG["equity_file"]
         if not os.path.exists(path):
             return []
@@ -197,6 +317,25 @@ class MotorSimulador:
 
     @staticmethod
     def _salvar_json_atomico(path: str, data, ensure_ascii: bool = True):
+        """Grava JSON em temporário e substitui o destino atomicamente.
+
+        Args:
+            path: Caminho de destino.
+            data: Objeto compatível com a serialização JSON.
+            ensure_ascii: Controla escaping de caracteres não ASCII.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se diretório, escrita, fsync ou substituição falhar.
+            TypeError: Se ``data`` contiver valores não serializáveis.
+            ValueError: Se a serialização JSON não puder representar os dados.
+
+        Side Effects:
+            Cria o diretório pai, grava um temporário, sincroniza os dados e
+            substitui o arquivo de destino; temporário incompleto é removido.
+        """
         directory = os.path.dirname(os.path.abspath(path))
         os.makedirs(directory, exist_ok=True)
         temp_path = None
@@ -223,6 +362,21 @@ class MotorSimulador:
                     pass
 
     def _recuperar_transacao_trade(self):
+        """Reaplica ao disco os dados de um journal transacional pendente.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se o journal estiver inválido ou alguma gravação falhar.
+
+        Side Effects:
+            Lê ``trade_journal_file``; se válido, grava estado e histórico
+            (e fluxo de caixa quando incluído) atomicamente e remove o journal.
+        """
         path = CONFIG["trade_journal_file"]
         if not os.path.exists(path):
             return
@@ -260,24 +414,102 @@ class MotorSimulador:
             ) from exc
 
     def _salvar_estado(self):
+        """Persiste o estado atual no caminho configurado.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se a gravação atômica falhar.
+            TypeError | ValueError: Se o estado não for serializável em JSON.
+
+        Side Effects:
+            Substitui ``CONFIG["state_file"]``.
+        """
         self._salvar_json_atomico(CONFIG["state_file"], self.estado.to_dict())
 
     def _salvar_historico(self):
+        """Persiste a lista atual de trades em JSON.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se a gravação atômica falhar.
+            TypeError | ValueError: Se o histórico não for serializável.
+
+        Side Effects:
+            Substitui ``CONFIG["history_file"]``.
+        """
         self._salvar_json_atomico(
             CONFIG["history_file"], self.historico, ensure_ascii=False
         )
 
     def _salvar_fluxo_caixa(self):
+        """Persiste depósitos e saques em JSON.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se a gravação atômica falhar.
+            TypeError | ValueError: Se o fluxo não for serializável.
+
+        Side Effects:
+            Substitui ``CONFIG["cash_flow_file"]``.
+        """
         self._salvar_json_atomico(
             CONFIG["cash_flow_file"], self.fluxo_caixa, ensure_ascii=False
         )
 
     def _salvar_equity(self):
+        """Persiste o histórico integral de amostras de patrimônio.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se a gravação atômica falhar.
+            TypeError | ValueError: Se o histórico não for serializável.
+
+        Side Effects:
+            Substitui ``CONFIG["equity_file"]``.
+        """
         self._salvar_json_atomico(
             CONFIG["equity_file"], self.equity_history, ensure_ascii=False
         )
 
     def _persistir_trade(self, estado_anterior: Estado, historico_anterior: list):
+        """Grava journal, estado e histórico como uma transação recuperável.
+
+        Args:
+            estado_anterior: Snapshot para rollback se o journal não puder ser criado.
+            historico_anterior: Histórico anterior para rollback pré-journal.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se persistência parcial deixar transação pendente.
+            TypeError | ValueError: Se serialização ou gravação inicial falhar.
+
+        Side Effects:
+            Cria ``trade_journal_file``, grava estado e histórico e remove o
+            journal após sucesso. Se a fase de journal falhar, restaura memória;
+            se arquivos finais falharem, mantém o journal e sinaliza erro.
+        """
         path = CONFIG["trade_journal_file"]
         transaction = {
             "state": self.estado.to_dict(),
@@ -306,6 +538,23 @@ class MotorSimulador:
         estado_anterior: Estado,
         fluxo_caixa_anterior: list,
     ):
+        """Persiste saldo, trades e fluxo de caixa em uma transação recuperável.
+
+        Args:
+            estado_anterior: Snapshot para rollback se o journal não for criado.
+            fluxo_caixa_anterior: Fluxo anterior usado para rollback pré-journal.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Se persistência parcial deixar transação pendente.
+            TypeError | ValueError: Se serialização ou gravação inicial falhar.
+
+        Side Effects:
+            Grava journal, estado, trades e fluxo de caixa; remove o journal
+            após sucesso. Mantém-no em falhas de gravação final para recovery.
+        """
         path = CONFIG["trade_journal_file"]
         transaction = {
             "state": self.estado.to_dict(),
@@ -332,6 +581,20 @@ class MotorSimulador:
             raise OSError(self.erro_persistencia) from exc
 
     def _validar_persistencia(self):
+        """Impede novas operações quando há uma transação pendente.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se ``erro_persistencia`` indicar dados pendentes.
+
+        Side Effects:
+            Nenhum; apenas consulta o estado do motor.
+        """
         if getattr(self, "erro_persistencia", ""):
             raise RuntimeError(
                 "Há uma transação pendente de gravação. Reinicie o simulador "
@@ -344,7 +607,28 @@ class MotorSimulador:
         timestamp,
         force_sample: bool = False,
     ):
-        """Registra uma amostra, mesmo que já exista outra no mesmo minuto."""
+        """Atualiza NAV/benchmark em memória e solicita persistência da amostra.
+
+        Args:
+            preco: Cotação em BRL/BTC usada para valorar caixa e BTC.
+            timestamp: Instante da amostra; datetime ou valor ausente (usa UTC atual).
+            force_sample: Se verdadeiro, permite amostra no mesmo minuto e
+                persiste sem debounce.
+
+        Returns:
+            None.
+
+        Raises:
+            ValueError: Se os timestamps previamente gravados forem inválidos.
+            OSError: Não é propagado pela persistência normal; fica em
+                ``erro_patrimonio``. Falha ao iniciar um timer pode propagar
+                ``RuntimeError`` da infraestrutura de threads.
+
+        Side Effects:
+            Acrescenta ou limita a lista ``equity_history`` a 15.000 pontos,
+            aplica fluxo pendente aos units/NAV e agenda ou executa gravação
+            em ``equity_file``.
+        """
         if not hasattr(self, "equity_history") or not isfinite(preco) or preco <= 0:
             return
         now = timestamp if isinstance(timestamp, datetime) else datetime.now(timezone.utc)
@@ -359,7 +643,7 @@ class MotorSimulador:
                 minute=0, second=0, microsecond=0
             ):
                 if self.erro_patrimonio:
-                    self._persistir_equity()
+                    self._persistir_equity(force_sample=True)
                 return
 
         equity = self.estado.capital_brl + self.estado.capital_btc * preco
@@ -395,9 +679,103 @@ class MotorSimulador:
         })
         self.equity_history = self.equity_history[-15000:]
         self._pending_equity_flow = 0.0
-        self._persistir_equity()
+        self._persistir_equity(force_sample=force_sample)
 
-    def _persistir_equity(self):
+    def _agendar_persistencia_equity(self, delay: float):
+        """Agenda callback daemon para concluir o debounce do equity.
+
+        Args:
+            delay: Atraso em segundos até a tentativa de gravação.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se o sistema não permitir iniciar o timer.
+            ValueError: Se o atraso não for aceito por ``threading.Timer``.
+
+        Side Effects:
+            Substitui ``_equity_save_timer`` e inicia uma thread timer.
+        """
+        timer = threading.Timer(delay, self._finalizar_debounce_equity)
+        timer.daemon = True
+        self._equity_save_timer = timer
+        timer.start()
+
+    def _finalizar_debounce_equity(self):
+        """Grava a última amostra quando termina a janela de debounce.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            OSError: Falhas de escrita são registradas em ``erro_patrimonio``,
+                não propagadas por :meth:`_persistir_equity`.
+
+        Side Effects:
+            Adquire o lock do motor, pode reagendar o timer e grava equity no
+            arquivo configurado quando a janela termina.
+        """
+        lock = getattr(self, "lock", None)
+        if lock is None:
+            return
+        with lock:
+            requested_at = getattr(self, "_equity_save_requested_at", None)
+            if requested_at is None:
+                return
+            debounce_seconds = max(
+                0.0, float(CONFIG.get("equity_debounce_segundos", 30))
+            )
+            remaining = debounce_seconds - (
+                time.monotonic() - requested_at
+            )
+            if remaining > 0:
+                self._agendar_persistencia_equity(remaining)
+                return
+            self._equity_save_timer = None
+            self._equity_save_requested_at = None
+            self._persistir_equity(force_sample=True)
+
+    def _persistir_equity(self, force_sample: bool = False):
+        """Persiste equity imediatamente ou após debounce trailing.
+
+        Args:
+            force_sample: Se verdadeiro, cancela timer pendente e grava agora.
+                Caso contrário, reinicia a marca temporal da janela e garante
+                um callback agendado.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError | ValueError: Se o timer não puder ser criado.
+            OSError: Capturado e registrado em ``erro_patrimonio``.
+
+        Side Effects:
+            Com debounce, controla timer e grava ``equity_file`` após
+            ``equity_debounce_segundos`` sem novas solicitações. Em modo
+            forçado atualiza ``_ultimo_equity_save_at`` após sucesso.
+        """
+        if not force_sample:
+            self._equity_save_requested_at = time.monotonic()
+            if getattr(self, "_equity_save_timer", None) is None:
+                debounce_seconds = max(
+                    0.0, float(CONFIG.get("equity_debounce_segundos", 30))
+                )
+                if debounce_seconds == 0:
+                    self._equity_save_requested_at = None
+                    return self._persistir_equity(force_sample=True)
+                self._agendar_persistencia_equity(debounce_seconds)
+            return
+
+        timer = getattr(self, "_equity_save_timer", None)
+        if timer is not None:
+            timer.cancel()
+        self._equity_save_timer = None
+        self._equity_save_requested_at = None
         try:
             self._salvar_equity()
         except OSError as exc:
@@ -405,13 +783,43 @@ class MotorSimulador:
             print(f"[AVISO] Não foi possível salvar a curva de patrimônio: {exc}")
         else:
             self.erro_patrimonio = ""
+            self._ultimo_equity_save_at = datetime.now(timezone.utc)
 
     def _registrar_trade(self, trade):
+        """Anexa ao histórico a representação em dicionário de um trade.
+
+        Args:
+            trade: Trade com método ``to_dict`` ou ``None``.
+
+        Returns:
+            None.
+
+        Raises:
+            AttributeError: Se o objeto não possuir ``to_dict``.
+
+        Side Effects:
+            Acrescenta um registro a ``self.historico``; não grava em disco.
+        """
         if trade is None:
             return
         self.historico.append(trade.to_dict())
 
     def _validar_cotacao_para_operacao(self) -> float:
+        """Valida atualidade e valor da última cotação antes de operar.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            float: Preço atual em BRL/BTC.
+
+        Raises:
+            RuntimeError: Se não houver cotação online atual ou se estiver fora
+                da janela configurada.
+
+        Side Effects:
+            Uma cotação expirada invalida ``preco_atualizado``.
+        """
         atualizado_em = getattr(self, "ultimo_update", None)
         if (
             not self.preco_atualizado
@@ -430,6 +838,23 @@ class MotorSimulador:
         return self.preco_atual
 
     def comprar_manual(self, valor_brl: float):
+        """Executa e persiste uma compra manual sob lock.
+
+        Args:
+            valor_brl: Valor bruto em BRL, positivo e não superior ao caixa.
+
+        Returns:
+            Trade: Registro da compra simulada.
+
+        Raises:
+            RuntimeError: Se a cotação ou persistência não permitir a operação.
+            ValueError: Se o valor for inválido ou exceder o caixa.
+            OSError: Se a transação falhar ao persistir.
+
+        Side Effects:
+            Altera estado e histórico, grava journal/estado/trades e registra
+            uma amostra equity forçada.
+        """
         with self.lock:
             self._validar_persistencia()
             preco = self._validar_cotacao_para_operacao()
@@ -448,6 +873,23 @@ class MotorSimulador:
             return trade
 
     def vender_manual(self, quantidade_btc: float):
+        """Executa e persiste uma venda manual de quantidade exata de BTC.
+
+        Args:
+            quantidade_btc: Quantidade a vender em BTC.
+
+        Returns:
+            Trade: Registro da venda.
+
+        Raises:
+            RuntimeError: Se a cotação ou persistência não permitir a operação.
+            ValueError: Se a quantidade for inválida ou exceder o saldo BTC.
+            OSError: Se a transação falhar ao persistir.
+
+        Side Effects:
+            Atualiza estado e histórico, grava transação e registra amostra
+            equity forçada.
+        """
         with self.lock:
             self._validar_persistencia()
             preco = self._validar_cotacao_para_operacao()
@@ -464,6 +906,23 @@ class MotorSimulador:
             return trade
 
     def depositar_manual(self, valor_brl: float):
+        """Registra depósito manual e atualiza o patrimônio.
+
+        Args:
+            valor_brl: Valor em reais, finito e positivo.
+
+        Returns:
+            CashFlow: Evento de depósito persistido.
+
+        Raises:
+            RuntimeError: Se houver persistência pendente.
+            ValueError: Se o valor for inválido.
+            OSError: Se falhar a persistência transacional.
+
+        Side Effects:
+            Atualiza caixa e lista de fluxo, grava journal/estado/fluxos e,
+            quando há preço atual, registra amostra equity com fluxo.
+        """
         with self.lock:
             self._validar_persistencia()
             estado_anterior = Estado.from_dict(self.estado.to_dict())
@@ -481,6 +940,23 @@ class MotorSimulador:
             return evento
 
     def sacar_manual(self, valor_brl: float):
+        """Registra saque manual sem vender BTC.
+
+        Args:
+            valor_brl: Valor em reais, finito, positivo e disponível em caixa.
+
+        Returns:
+            CashFlow: Evento de saque persistido.
+
+        Raises:
+            RuntimeError: Se houver persistência pendente.
+            ValueError: Se valor for inválido ou superior ao caixa.
+            OSError: Se falhar a persistência transacional.
+
+        Side Effects:
+            Atualiza caixa e lista de fluxo, grava journal/estado/fluxos e,
+            quando há preço atual, registra amostra equity com fluxo negativo.
+        """
         with self.lock:
             self._validar_persistencia()
             estado_anterior = Estado.from_dict(self.estado.to_dict())
@@ -498,6 +974,21 @@ class MotorSimulador:
             return evento
 
     def iniciar(self):
+        """Inicia a thread daemon do ciclo de cotação se ainda não estiver ativa.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se a thread não puder ser iniciada; mensagem fica em
+                ``erro_persistencia``.
+
+        Side Effects:
+            Inicia ``self.thread``.
+        """
         if not self.thread.is_alive():
             try:
                 self.thread.start()
@@ -506,11 +997,43 @@ class MotorSimulador:
                 raise RuntimeError(self.erro_persistencia) from exc
 
     def parar(self):
+        """Sinaliza encerramento do loop e aguarda a thread por até dois segundos.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError: Se a operação de join da thread falhar.
+
+        Side Effects:
+            Define ``rodando=False`` e pode bloquear a thread chamadora por
+            até dois segundos.
+        """
         self.rodando = False
         if self.thread.is_alive():
             self.thread.join(timeout=2)
 
     def _loop(self):
+        """Executa o ciclo contínuo de cotação, estratégia e persistência.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            As exceções esperadas por iteração são capturadas; falhas ficam em
+            ``ultimo_erro`` e invalidam a cotação, sem encerrar o loop.
+
+        Side Effects:
+            Consulta fontes online, atualiza estado de mercado, executa trades
+            automáticos, grava estado/históricos e aguarda o intervalo definido
+            em ``CONFIG`` enquanto ``rodando`` for verdadeiro.
+        """
         while self.rodando:
             try:
                 cotacao: Cotacao = buscar_cotacao_btc_brl()
@@ -635,7 +1158,33 @@ class MotorSimulador:
 # =========================================================================
 
 class AppBTC(ctk.CTk):
+    """Janela CustomTkinter do paper trader e adaptador entre UI e motor.
+
+    A classe agenda atualizações da interface, representa cotações e patrimônio,
+    e delega operações ao :class:`MotorSimulador`. A interface cria e atualiza
+    widgets e figuras Matplotlib; o motor mantém a thread de mercado.
+    """
+
     def __init__(self):
+        """Constrói a janela, seus painéis, gráficos e instância do motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            RuntimeError | ValueError | OSError: Falhas de abertura dos dados
+                são mostradas em diálogo e encerram a janela; erro não é
+                propagado após essa recuperação.
+            TclError: Se a criação/configuração de widgets falhar fora do
+                caminho de tratamento de inicialização do motor.
+
+        Side Effects:
+            Cria widgets e figuras, carrega arquivos via ``MotorSimulador``,
+            inicia sua thread e agenda o primeiro callback de atualização.
+        """
         super().__init__()
 
         self._after_id = None
@@ -645,6 +1194,9 @@ class AppBTC(ctk.CTk):
         self._backtest_resultados = queue.Queue()
         self._metricas_cache_key = None
         self._metricas_cache = None
+        self._cache_fluxo_key = None
+        self._cache_depositos = 0.0
+        self._cache_saques = 0.0
         self._toast_after_id = None
         self._closing = False
         self.title("BTC Paper Trader")
@@ -1075,6 +1627,21 @@ class AppBTC(ctk.CTk):
 
     # -----------------------------------------------------------------
     def _ajustar_largura_textos(self, event):
+        """Ajusta canvases e quebra de texto quando a janela é redimensionada.
+
+        Args:
+            event: Evento Tkinter de configuração da janela.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se algum widget Tcl tiver sido destruído durante o ajuste.
+            ValueError: Se os widgets fornecerem dimensões não conversíveis.
+
+        Side Effects:
+            Reconfigura dimensões de widgets e larguras de quebra de texto.
+        """
         if event.widget is not self:
             return
         self.conteudo.configure(
@@ -1102,6 +1669,23 @@ class AppBTC(ctk.CTk):
         self.lbl_status.configure(wraplength=largura)
 
     def _criar_card(self, parent, titulo, valor, variacao):
+        """Cria um cartão de resumo com valor principal e variação.
+
+        Args:
+            parent: Widget pai Tkinter.
+            titulo: Texto do título.
+            valor: Texto inicial do valor.
+            variacao: Texto inicial da variação/legenda.
+
+        Returns:
+            CTkFrame: Cartão com atributos ``lbl_valor`` e ``lbl_var``.
+
+        Raises:
+            TclError: Se a criação ou disposição de widgets falhar.
+
+        Side Effects:
+            Cria e posiciona widgets filhos no pai informado.
+        """
         card = ctk.CTkFrame(parent, fg_color=CORES["bg_card"], corner_radius=10)
         card.grid_columnconfigure(0, weight=1)
 
@@ -1124,6 +1708,24 @@ class AppBTC(ctk.CTk):
         return card
 
     def _criar_label_posicao(self, parent, titulo, valor, row, col):
+        """Cria rótulo de título e valor para uma coluna de posição.
+
+        Args:
+            parent: Widget pai.
+            titulo: Legenda do dado.
+            valor: Valor textual inicial.
+            row: Linha-base da grade.
+            col: Coluna da grade.
+
+        Returns:
+            CTkLabel: Widget que exibe o valor e pode ser atualizado depois.
+
+        Raises:
+            TclError: Se a criação/disposição do widget falhar.
+
+        Side Effects:
+            Cria e posiciona um frame e dois rótulos.
+        """
         frame = ctk.CTkFrame(parent, fg_color="transparent")
         frame.grid(row=row + 1, column=col, sticky="w", padx=15, pady=(0, 15))
 
@@ -1138,6 +1740,21 @@ class AppBTC(ctk.CTk):
         return lbl
 
     def _cancelar_callbacks_pendentes(self):
+        """Cancela callbacks Tk agendados por esta janela e seus descendentes.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros Tcl esperados durante destruição são ignorados.
+
+        Side Effects:
+            Consulta ``after info`` e cancela timers associados a widgets
+            pertencentes à janela.
+        """
         try:
             callback_ids = self.tk.splitlist(self.tk.call("after", "info"))
         except TclError:
@@ -1169,6 +1786,20 @@ class AppBTC(ctk.CTk):
                     continue
 
     def _desregistrar_rastreadores_customtkinter(self):
+        """Remove esta janela dos rastreadores globais do CustomTkinter.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros de remoção por ausência já são tratados internamente.
+
+        Side Effects:
+            Altera listas/flags globais de rastreamento de escala e aparência.
+        """
         ScalingTracker.remove_window(self._set_scaling, self)
         ScalingTracker.window_dpi_scaling_dict.pop(self, None)
         if not ScalingTracker.window_widgets_dict:
@@ -1181,6 +1812,22 @@ class AppBTC(ctk.CTk):
             AppearanceModeTracker.update_loop_running = False
 
     def _ao_fechar(self):
+        """Executa uma única vez o encerramento ordenado da interface.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se operações de teardown de widgets falharem.
+            RuntimeError: Se o motor não puder ser interrompido.
+
+        Side Effects:
+            Cancela callbacks, interrompe o motor, fecha figuras Matplotlib e
+            destrói a janela.
+        """
         if self._closing:
             return
         self._closing = True
@@ -1195,6 +1842,21 @@ class AppBTC(ctk.CTk):
         self.destroy()
 
     def _exportar_trades_csv(self):
+        """Solicita destino ao usuário e exporta trades para CSV com BOM UTF-8.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None; cancela silenciosamente se o diálogo não fornecer destino.
+
+        Raises:
+            Falhas ``OSError`` de gravação são exibidas em diálogo e tratadas.
+
+        Side Effects:
+            Abre diálogo de arquivo, lê histórico sob lock e grava CSV no
+            destino escolhido; mostra diálogo de resultado.
+        """
         destino = filedialog.asksaveasfilename(
             parent=self,
             title="Exportar histórico de trades",
@@ -1221,6 +1883,22 @@ class AppBTC(ctk.CTk):
         )
 
     def _rodar_backtest(self):
+        """Valida condições e inicia o backtest em uma thread auxiliar.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros de rede, parsing ou simulação são capturados pela thread e
+            enviados à fila de resultados, não propagados ao callback.
+
+        Side Effects:
+            Lê estado sob lock, atualiza widgets e inicia worker daemon que
+            consulta histórico CoinGecko e calcula resultados.
+        """
         if self._backtest_em_execucao:
             return
         with self.motor.lock:
@@ -1259,6 +1937,15 @@ class AppBTC(ctk.CTk):
         )
 
         def trabalho():
+            """Busca e simula o período em thread de fundo.
+
+            Returns:
+                None.
+
+            Side Effects:
+                Consulta o histórico remoto e coloca o resultado ou erro na
+                fila ``_backtest_resultados`` para consumo pela interface.
+            """
             try:
                 history = buscar_historico_btc_brl_periodo(dias)
                 result = simular_backtest(history, capital)
@@ -1273,6 +1960,25 @@ class AppBTC(ctk.CTk):
         threading.Thread(target=trabalho, daemon=True).start()
 
     def _finalizar_backtest(self, resultado, erro: str, periodo: str):
+        """Atualiza widgets e gráfico com o resultado assíncrono do backtest.
+
+        Args:
+            resultado: Dicionário de resultado de ``simular_backtest`` ou ``None``.
+            erro: Mensagem de erro; string vazia representa sucesso.
+            periodo: Rótulo do período selecionado.
+
+        Returns:
+            None.
+
+        Raises:
+            KeyError | TypeError | ValueError: Se um resultado de sucesso não
+                tiver o formato esperado.
+            TclError: Se widgets ou canvas não estiverem disponíveis.
+
+        Side Effects:
+            Reabilita o botão, atualiza status, desenha no eixo do backtest e
+            solicita renderização do canvas.
+        """
         self._backtest_em_execucao = False
         self.botao_backtest.configure(state="normal")
         if erro:
@@ -1326,7 +2032,36 @@ class AppBTC(ctk.CTk):
         )
 
     def _mostrar_notificacao_trade(self, trade: dict):
+        """Mostra toast e sinal sonoro para uma operação automática.
+
+        Args:
+            trade: Registro de trade com tipo, valor BRL e motivo.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se a recriação ou disposição do widget também falhar após
+                o tratamento do widget antigo destruído.
+            ValueError: Se ``valor_brl`` não puder ser convertido em número.
+
+        Side Effects:
+            Cria/reconfigura label, toca campainha, cancela toast anterior e
+            agenda o desaparecimento após sete segundos.
+        """
         def criar_toast():
+            """Cria um label novo para exibir a notificação.
+
+            Returns:
+                ctk.CTkLabel: Widget de toast associado à janela atual.
+
+            Raises:
+                TclError: Se o interpretador Tcl ou a janela não estiverem
+                    disponíveis.
+
+            Side Effects:
+                Cria um widget filho da janela, sem exibi-lo ainda.
+            """
             return ctk.CTkLabel(
                 self,
                 text="",
@@ -1355,6 +2090,24 @@ class AppBTC(ctk.CTk):
         self._toast_after_id = self.after(7000, self.lbl_toast.place_forget)
 
     def _criar_link_noticia(self, parent, text: str, url: str, index: int):
+        """Cria rótulo de notícia clicável que abre o endereço no navegador.
+
+        Args:
+            parent: Widget pai do link.
+            text: Texto já formatado da notícia.
+            url: Endereço HTTP(S) a abrir quando clicado.
+            index: Índice usado para organizar o widget na grade.
+
+        Returns:
+            CTkLabel: Rótulo criado.
+
+        Raises:
+            TclError: Se a criação/configuração do widget falhar.
+            webbrowser.Error: Se o navegador falhar ao abrir ao receber clique.
+
+        Side Effects:
+            Cria e posiciona widget; registra callback que abre o navegador.
+        """
         label = ctk.CTkLabel(
             parent,
             text=text,
@@ -1377,6 +2130,23 @@ class AppBTC(ctk.CTk):
 
     @staticmethod
     def _ler_numero(texto: str, tipo: str = "brl") -> float:
+        """Interpreta entrada numérica em convenção BRL ou quantidade BTC.
+
+        Args:
+            texto: Campo digitado; BRL aceita agrupamento ``.`` e decimal ``,``,
+                além de ponto decimal com uma ou duas casas.
+            tipo: ``"brl"`` ou ``"btc"``.
+
+        Returns:
+            float: Valor numérico sem conversão de unidade.
+
+        Raises:
+            ValueError: Se texto, separadores ou tipo forem inválidos ou o
+                valor resultante não for finito.
+
+        Side Effects:
+            Nenhum.
+        """
         texto = texto.strip().replace("R$", "").replace(" ", "")
         if not texto or tipo not in ("brl", "btc"):
             raise ValueError("Informe um número válido.")
@@ -1434,6 +2204,21 @@ class AppBTC(ctk.CTk):
         return valor
 
     def _comprar_manual(self):
+        """Lê o campo de compra e encaminha a ordem ao motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros ``OSError``, ``ValueError`` e ``RuntimeError`` são exibidos
+            ao usuário e tratados.
+
+        Side Effects:
+            Pode executar e persistir uma compra; limpa o campo e mostra diálogo.
+        """
         try:
             valor = self._ler_numero(self.entrada_compra.get(), "brl")
             trade = self.motor.comprar_manual(valor)
@@ -1448,6 +2233,21 @@ class AppBTC(ctk.CTk):
             messagebox.showerror("Não foi possível comprar", str(e), parent=self)
 
     def _vender_manual(self):
+        """Lê quantidade BTC e solicita venda manual ao motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros ``OSError``, ``ValueError`` e ``RuntimeError`` são exibidos
+            ao usuário e tratados.
+
+        Side Effects:
+            Pode executar e persistir venda; limpa o campo e mostra diálogo.
+        """
         try:
             quantidade = self._ler_numero(self.entrada_venda.get(), "btc")
             trade = self.motor.vender_manual(quantidade)
@@ -1462,6 +2262,21 @@ class AppBTC(ctk.CTk):
             messagebox.showerror("Não foi possível vender", str(e), parent=self)
 
     def _depositar_manual(self):
+        """Lê valor em BRL e registra depósito manual no motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros ``OSError``, ``ValueError`` e ``RuntimeError`` são exibidos
+            ao usuário e tratados.
+
+        Side Effects:
+            Pode alterar e persistir caixa/fluxo; limpa o campo e mostra diálogo.
+        """
         try:
             valor = self._ler_numero(self.entrada_deposito.get(), "brl")
             evento = self.motor.depositar_manual(valor)
@@ -1475,6 +2290,21 @@ class AppBTC(ctk.CTk):
             messagebox.showerror("Não foi possível depositar", str(e), parent=self)
 
     def _sacar_manual(self):
+        """Lê valor em BRL e registra saque manual no motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            Erros ``OSError``, ``ValueError`` e ``RuntimeError`` são exibidos
+            ao usuário e tratados.
+
+        Side Effects:
+            Pode alterar e persistir caixa/fluxo; limpa o campo e mostra diálogo.
+        """
         try:
             valor = self._ler_numero(self.entrada_saque.get(), "brl")
             evento = self.motor.sacar_manual(valor)
@@ -1489,6 +2319,22 @@ class AppBTC(ctk.CTk):
 
     @staticmethod
     def _para_horario_local(timestamp: str | datetime) -> datetime:
+        """Converte timestamp ISO ou datetime para o fuso de São Paulo.
+
+        Args:
+            timestamp: String ISO 8601 ou objeto datetime; valores sem fuso são
+                interpretados como UTC.
+
+        Returns:
+            datetime: Instante timezone-aware em ``America/Sao_Paulo``.
+
+        Raises:
+            ValueError: Se uma string não puder ser interpretada como ISO 8601.
+            TypeError: Se o argumento não for string nem datetime.
+
+        Side Effects:
+            Nenhum.
+        """
         dt = (
             timestamp
             if isinstance(timestamp, datetime)
@@ -1500,6 +2346,22 @@ class AppBTC(ctk.CTk):
 
     # -----------------------------------------------------------------
     def atualizar_gui(self):
+        """Atualiza widgets a partir de um snapshot consistente do motor.
+
+        Args:
+            Nenhum.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se widgets forem destruídos durante a atualização.
+
+        Side Effects:
+            Adquire brevemente o lock do motor, atualiza painéis/gráficos,
+            consome resultados de backtest e agenda nova chamada em dois
+            segundos (ou 100 ms se o lock estiver ocupado).
+        """
         if self._closing or not self.winfo_exists():
             return
 
@@ -1615,6 +2477,29 @@ class AppBTC(ctk.CTk):
         atualizado_analistas,
         erro,
     ):
+        """Redesenha gráficos de mercado, previsão e painel de notícias.
+
+        Args:
+            historico: Pares ``(datetime, preço BRL/BTC)`` observados.
+            previsao: Pontos de previsão com timestamp, valor esperado e faixa.
+            artigos: Notícias recentes tipadas como ``AnalystArticle``.
+            sentimento: Sinal agregado lexical no intervalo aproximado [-1, 1].
+            preco_atual: Última cotação BRL/BTC ou ``None``.
+            atualizado_mercado: Instante de atualização do histórico, se houver.
+            atualizado_analistas: Instante de atualização das notícias, se houver.
+            erro: Mensagem de indisponibilidade da análise, se existente.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se o canvas/widgtes da interface não estiverem disponíveis.
+            ValueError: Se dados recebidos tiverem timestamps incompatíveis.
+
+        Side Effects:
+            Limpa e redesenha eixos Matplotlib, atualiza canvases e rótulos
+            informativos de mercado, previsão e analistas.
+        """
         ax_real, ax_previsao = self.axes
         for ax in self.axes:
             ax.clear()
@@ -1891,20 +2776,64 @@ class AppBTC(ctk.CTk):
                 self.botoes_fontes_analistas.append(link)
                 self.widgets_fontes_analistas.append(link)
 
+    def _obter_totais_fluxo_caixa(self, fluxo_caixa):
+        """Retorna depósitos/saques somados, reutilizando cache por tamanho.
+
+        Args:
+            fluxo_caixa: Lista de eventos com tipo e valor em BRL.
+
+        Returns:
+            tuple[float, float]: Totais de depósitos e saques, nessa ordem.
+
+        Raises:
+            KeyError: Se um evento precisar ser contado e não tiver tipo/valor.
+            TypeError | ValueError: Se o valor de um evento não for numérico.
+
+        Side Effects:
+            Atualiza atributos de cache quando o comprimento da lista muda.
+        """
+        fluxo_key = len(fluxo_caixa)
+        if fluxo_key != self._cache_fluxo_key:
+            self._cache_depositos = sum(
+                float(item["valor_brl"])
+                for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
+            )
+            self._cache_saques = sum(
+                float(item["valor_brl"])
+                for item in fluxo_caixa if item["tipo"] == "SAQUE"
+            )
+            self._cache_fluxo_key = fluxo_key
+        return self._cache_depositos, self._cache_saques
+
     def _atualizar_tela(
         self, estado, historico, preco, fonte_preco, fluxo_caixa, equity_history
     ):
+        """Atualiza valores, métricas e lista de trades da interface principal.
+
+        Args:
+            estado: Snapshot de :class:`Estado`.
+            historico: Lista de trades em dicionários.
+            preco: Preço BTC/BRL exibido.
+            fonte_preco: Identificação da fonte da cotação.
+            fluxo_caixa: Eventos de depósitos e saques.
+            equity_history: Amostras NAV/equity para métricas e gráfico.
+
+        Returns:
+            None.
+
+        Raises:
+            KeyError | TypeError | ValueError: Se snapshots não tiverem os
+                campos ou valores esperados pelas métricas.
+            TclError: Se algum widget tiver sido destruído durante atualização.
+
+        Side Effects:
+            Reconfigura rótulos, calcula/cacheia métricas e delega atualização
+            do histórico visual de trades.
+        """
         capital_brl = estado.capital_brl
         capital_btc = estado.capital_btc
         preco_medio = estado.preco_medio_brl
-        depositos = sum(
-            float(item["valor_brl"])
-            for item in fluxo_caixa if item["tipo"] == "DEPOSITO"
-        )
-        saques = sum(
-            float(item["valor_brl"])
-            for item in fluxo_caixa if item["tipo"] == "SAQUE"
-        )
+        depositos, saques = self._obter_totais_fluxo_caixa(fluxo_caixa)
         capital_aportado = estado.patrimonio_inicial_brl + depositos - saques
 
         valor_btc = capital_btc * preco
@@ -2016,6 +2945,28 @@ class AppBTC(ctk.CTk):
         self._atualizar_trades(historico)
 
     def _atualizar_grafico_patrimonio(self, equity_history, historico):
+        """Desenha equity e benchmark; reduz apenas os pontos apresentados.
+
+        Args:
+            equity_history: Lista cronológica de amostras com timestamp,
+                patrimônio e benchmark em BRL.
+            historico: Trades com timestamp e tipo, usados como marcadores.
+
+        Returns:
+            None.
+
+        Raises:
+            AssertionError: Em modo debug, se timestamps do histórico não
+                estiverem ordenados.
+            KeyError | TypeError | ValueError: Se campos de amostra ou datas
+                forem inválidos fora dos casos tratados.
+            TclError: Se widgets/canvas não estiverem disponíveis.
+
+        Side Effects:
+            Limpa e redesenha o eixo de patrimônio, atualiza status e solicita
+            renderização. Para mais de 5.000 amostras, plota uma amostra de
+            cerca de 500 pontos; os dados de entrada não são alterados.
+        """
         eixo = self.ax_patrimonio
         eixo.clear()
         eixo.set_facecolor(CORES["bg_secundario"])
@@ -2038,20 +2989,35 @@ class AppBTC(ctk.CTk):
                 self._para_horario_local(point["timestamp"])
                 for point in equity_history
             ]
+            if __debug__:
+                assert timestamps == sorted(timestamps), (
+                    "As amostras equity precisam estar ordenadas por timestamp."
+                )
             values = [float(point["equity"]) for point in equity_history]
             benchmark = [float(point["benchmark"]) for point in equity_history]
+            plot_timestamps = timestamps
+            plot_values = values
+            plot_benchmark = benchmark
+            if len(timestamps) > 5000:
+                step = (len(timestamps) + 499) // 500
+                sample_indices = list(range(0, len(timestamps), step))
+                if sample_indices[-1] != len(timestamps) - 1:
+                    sample_indices.append(len(timestamps) - 1)
+                plot_timestamps = [timestamps[index] for index in sample_indices]
+                plot_values = [values[index] for index in sample_indices]
+                plot_benchmark = [benchmark[index] for index in sample_indices]
             eixo.plot(
-                timestamps, values, color=CORES["verde_matrix"],
+                plot_timestamps, plot_values, color=CORES["verde_matrix"],
                 linewidth=1.8, marker="o",
-                markevery=max(1, len(timestamps) // 20),
-                markersize=7 if len(timestamps) == 1 else 3.5,
+                markevery=max(1, len(plot_timestamps) // 20),
+                markersize=7 if len(plot_timestamps) == 1 else 3.5,
                 label="Estratégia",
             )
             eixo.plot(
-                timestamps, benchmark, color=CORES["azul_pastel"],
+                plot_timestamps, plot_benchmark, color=CORES["azul_pastel"],
                 linestyle="--", linewidth=1.4, marker="s",
-                markevery=max(1, len(timestamps) // 20),
-                markersize=6 if len(timestamps) == 1 else 3,
+                markevery=max(1, len(plot_timestamps) // 20),
+                markersize=6 if len(plot_timestamps) == 1 else 3,
                 label="Buy-and-hold BTC",
             )
             if len(timestamps) == 1:
@@ -2128,6 +3094,23 @@ class AppBTC(ctk.CTk):
         self.canvas_patrimonio.draw_idle()
 
     def _atualizar_trades(self, historico):
+        """Renderiza no painel os trades mais recentes.
+
+        Args:
+            historico: Trades como dicionários, em ordem cronológica.
+
+        Returns:
+            None.
+
+        Raises:
+            TclError: Se o widget de texto tiver sido destruído.
+            KeyError | TypeError | ValueError: Se os campos usados para
+                apresentação não puderem ser formatados.
+
+        Side Effects:
+            Substitui o conteúdo do widget de histórico; exibe no máximo os
+            quinze registros mais recentes.
+        """
         self.txt_trades.configure(state="normal")
         self.txt_trades.delete("1.0", "end")
 

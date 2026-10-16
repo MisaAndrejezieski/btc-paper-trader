@@ -11,7 +11,22 @@ from models import CashFlow, Estado, Trade
 
 
 def registrar_deposito(estado: Estado, valor_brl: float) -> CashFlow:
-    """Adiciona dinheiro ao saldo BRL sem executar um trade."""
+    """Adiciona um depósito fictício ao caixa sem registrar trade.
+
+    Args:
+        estado: Estado a atualizar in-place.
+        valor_brl: Valor do depósito em reais; deve ser finito e positivo.
+
+    Returns:
+        CashFlow: Evento ``DEPOSITO`` com timestamp UTC.
+
+    Raises:
+        ValueError: Se o valor for não finito ou menor/igual a zero.
+
+    Side Effects:
+        Incrementa ``estado.capital_brl``. Não cobra taxa nem altera contadores
+        de trades.
+    """
     if not isfinite(valor_brl) or valor_brl <= 0:
         raise ValueError("O valor do depósito precisa ser maior que zero.")
 
@@ -24,7 +39,22 @@ def registrar_deposito(estado: Estado, valor_brl: float) -> CashFlow:
 
 
 def registrar_saque(estado: Estado, valor_brl: float) -> CashFlow:
-    """Retira dinheiro do saldo BRL sem executar um trade."""
+    """Registra um saque em reais sem executar venda de BTC.
+
+    Args:
+        estado: Estado a atualizar in-place.
+        valor_brl: Valor do saque em reais; deve ser finito, positivo e disponível.
+
+    Returns:
+        CashFlow: Evento ``SAQUE`` com timestamp UTC.
+
+    Raises:
+        ValueError: Se o valor não for positivo/finito ou exceder o caixa.
+
+    Side Effects:
+        Decrementa ``estado.capital_brl``. Não cobra taxa nem altera contadores
+        de trades.
+    """
     if not isfinite(valor_brl) or valor_brl <= 0:
         raise ValueError("O valor do saque precisa ser maior que zero.")
     if valor_brl > estado.capital_brl:
@@ -39,7 +69,25 @@ def registrar_saque(estado: Estado, valor_brl: float) -> CashFlow:
 
 
 def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: str) -> Trade:
-    """Executa uma compra simulada e atualiza o estado."""
+    """Executa uma compra simulada, incluindo taxa e preço médio ponderado.
+
+    Args:
+        estado: Estado a alterar in-place.
+        preco_brl: Preço unitário do BTC em BRL/BTC.
+        valor_brl: Valor bruto da compra em BRL; limitado ao caixa disponível.
+        motivo: Código descritivo da origem da compra.
+
+    Returns:
+        Trade: Compra executada, com quantidade líquida de taxa e valores BRL.
+
+    Raises:
+        ValueError: Se preço ou valor forem não finitos/não positivos, ou não
+            houver saldo disponível.
+
+    Side Effects:
+        Altera caixa, BTC, custo médio, timestamps, flags estratégicas,
+        contador de compras e total de taxas. A persistência cabe ao chamador.
+    """
     if not isfinite(preco_brl) or preco_brl <= 0:
         raise ValueError("O preço precisa ser maior que zero.")
     if not isfinite(valor_brl) or valor_brl <= 0:
@@ -86,7 +134,23 @@ def executar_compra(estado: Estado, preco_brl: float, valor_brl: float, motivo: 
 def executar_venda(
     estado: Estado, preco_brl: float, percentual: float, motivo: str
 ) -> Trade | None:
-    """Executa uma venda simulada e atualiza o estado."""
+    """Vende uma porcentagem da posição BTC atual.
+
+    Args:
+        estado: Estado a alterar in-place.
+        preco_brl: Preço unitário do BTC em BRL/BTC.
+        percentual: Fração percentual da posição, no intervalo ``(0, 100]``.
+        motivo: Código descritivo da origem da venda.
+
+    Returns:
+        Trade | None: Trade produzido pela venda; ``None`` se não houver BTC.
+
+    Raises:
+        ValueError: Se o percentual for inválido ou os dados da venda não forem válidos.
+
+    Side Effects:
+        Delega a alteração do estado a :func:`executar_venda_quantidade`.
+    """
     if not isfinite(percentual) or percentual <= 0 or percentual > 100:
         raise ValueError("O percentual da venda precisa estar entre 0 e 100%.")
     quantidade = estado.capital_btc * (percentual / 100)
@@ -98,7 +162,25 @@ def executar_venda(
 def executar_venda_quantidade(
     estado: Estado, preco_brl: float, quantidade: float, motivo: str
 ) -> Trade:
-    """Vende uma quantidade exata de BTC e atualiza o estado."""
+    """Vende uma quantidade exata de BTC, descontando taxa de operação.
+
+    Args:
+        estado: Estado a alterar in-place.
+        preco_brl: Preço unitário do BTC em BRL/BTC.
+        quantidade: Quantidade a vender em BTC.
+        motivo: Código descritivo da origem da venda.
+
+    Returns:
+        Trade: Registro da venda com valor bruto e taxa em BRL.
+
+    Raises:
+        ValueError: Se preço/quantidade forem não finitos ou não positivos, ou
+            se a quantidade exceder o saldo BTC.
+
+    Side Effects:
+        Atualiza caixa, saldo BTC, flags estratégicas, contadores e taxas.
+        Remove resíduos de BTC abaixo do limite numérico; não persiste em disco.
+    """
     if not isfinite(preco_brl) or preco_brl <= 0:
         raise ValueError("O preço precisa ser maior que zero.")
     if not isfinite(quantidade) or quantidade <= 0:

@@ -6,6 +6,17 @@ Acompanha o preço real do BTC e simula trades automáticos de compra extra,
 take-profit parcial e stop-loss, com capital fictício. Depósitos e saques são
 movimentações manuais de saldo, separadas do histórico de trades.
 
+## Arquitetura
+
+- `main.py` coordena a interface, o ciclo de mercado e a persistência.
+- `fetcher.py` consulta fontes online e o cache local de cotação.
+- `strategy.py` decide a ação; `simulator.py` aplica-a ao estado em memória.
+- `models.py` define estado, trades e eventos de fluxo de caixa.
+- O motor persiste operações com journal e recuperação no próximo início.
+- NAV e benchmark acompanham depósitos e saques sem contá-los como retorno.
+- Métricas de risco usam NAV diário, trades FIFO e exposição temporal.
+- Veja a [documentação técnica da arquitetura](docs/ARCHITECTURE.md).
+
 ## Estratégia
 
 - **Compra extra:** compra R$ 5.000 (valor-base de R$ 1.000 vezes o multiplicador

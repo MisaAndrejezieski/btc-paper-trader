@@ -3,6 +3,7 @@ import math
 import os
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -10,6 +11,9 @@ from email.utils import format_datetime
 from io import StringIO
 from tkinter import TclError
 from unittest.mock import Mock, call, patch
+
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
 
 from fetcher import Cotacao, buscar_cotacao_btc_brl
 from main import (
@@ -147,6 +151,104 @@ class SimulatorTests(unittest.TestCase):
                 self.assertEqual(len(motor.historico), 10)
                 self.assertEqual(motor.erro_persistencia, "")
                 self.assertFalse(os.path.exists(files["trade_journal_file"]))
+
+    def test_equity_save_debounce_persists_latest_sample(self):
+        class FakeTimer:
+            def __init__(self, interval, function):
+                self.interval = interval
+                self.function = function
+                self.daemon = False
+                self.cancelled = False
+
+            def start(self):
+                pass
+
+            def cancel(self):
+                self.cancelled = True
+
+        motor = MotorSimulador.__new__(MotorSimulador)
+        motor.lock = threading.Lock()
+        motor._equity_save_timer = None
+        motor._equity_save_requested_at = None
+        motor._ultimo_equity_save_at = None
+        motor.erro_patrimonio = ""
+        motor.equity_history = []
+        saved_samples = []
+        motor._salvar_equity = Mock(
+            side_effect=lambda: saved_samples.append(
+                motor.equity_history[-1]["value"]
+            )
+        )
+
+        with (
+            patch.dict("config.CONFIG", {"equity_debounce_segundos": 30}),
+            patch("main.threading.Timer", FakeTimer),
+            patch("main.time.monotonic", side_effect=[0.0, 5.0, 10.0, 41.0]),
+        ):
+            for value in range(3):
+                motor.equity_history = [{"value": value}]
+                motor._persistir_equity()
+            timer = motor._equity_save_timer
+            motor._salvar_equity.assert_not_called()
+
+            timer.function()
+
+        motor._salvar_equity.assert_called_once_with()
+        self.assertEqual(saved_samples, [2])
+        self.assertIsNotNone(motor._ultimo_equity_save_at)
+        self.assertIsNone(motor._equity_save_timer)
+
+    def test_cash_flow_totals_are_cached_until_list_length_changes(self):
+        class CountingList(list):
+            iterations = 0
+
+            def __iter__(self):
+                self.iterations += 1
+                return super().__iter__()
+
+        app = AppBTC.__new__(AppBTC)
+        app._cache_fluxo_key = None
+        app._cache_depositos = 0.0
+        app._cache_saques = 0.0
+        fluxo = CountingList([
+            {"tipo": "DEPOSITO", "valor_brl": 300},
+            {"tipo": "SAQUE", "valor_brl": 50},
+        ])
+
+        self.assertEqual(app._obter_totais_fluxo_caixa(fluxo), (300, 50))
+        self.assertEqual(app._obter_totais_fluxo_caixa(fluxo), (300, 50))
+        self.assertEqual(fluxo.iterations, 2)
+
+        fluxo.append({"tipo": "DEPOSITO", "valor_brl": 20})
+        self.assertEqual(app._obter_totais_fluxo_caixa(fluxo), (320, 50))
+        self.assertEqual(fluxo.iterations, 4)
+
+    def test_equity_chart_downsamples_15000_points_within_one_second(self):
+        app = AppBTC.__new__(AppBTC)
+        figure = Figure(figsize=(8, 3))
+        app.fig_patrimonio = figure
+        app.ax_patrimonio = figure.add_subplot(111)
+        app.canvas_patrimonio = FigureCanvasAgg(figure)
+        app.lbl_patrimonio_status = Mock()
+        app._para_horario_local = AppBTC._para_horario_local
+        start = datetime(2025, 1, 1, tzinfo=timezone.utc)
+        equity_history = [
+            {
+                "timestamp": (start + timedelta(hours=index)).isoformat(),
+                "equity": 10_000 + index,
+                "benchmark": 10_000 + index * 0.9,
+            }
+            for index in range(15_000)
+        ]
+
+        started_at = time.perf_counter()
+        app._atualizar_grafico_patrimonio(equity_history, [])
+        elapsed = time.perf_counter() - started_at
+
+        self.assertLess(elapsed, 1.0)
+        self.assertEqual(len(app.ax_patrimonio.lines), 2)
+        self.assertLessEqual(len(app.ax_patrimonio.lines[0].get_xdata()), 501)
+        self.assertLessEqual(len(app.ax_patrimonio.lines[1].get_xdata()), 501)
 
     def test_cash_flow_rejects_invalid_amounts_without_changing_balance(self):
         for operacao in (registrar_deposito, registrar_saque):
