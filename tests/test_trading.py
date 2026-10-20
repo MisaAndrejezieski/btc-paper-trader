@@ -627,7 +627,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(motor.ultimo_erro, "offline")
         self.assertIsNone(motor._cotacao_atual)
 
-    def test_loop_recovers_quote_after_a_transient_failure(self):
+    def test_quote_polling_recovers_after_a_transient_failure(self):
         motor = MotorSimulador.__new__(MotorSimulador)
         motor.rodando = True
         motor.lock = threading.Lock()
@@ -656,13 +656,21 @@ class SimulatorTests(unittest.TestCase):
             return quote
 
         motor._parar_cotacao.wait.side_effect = stop_after_second_iteration
-        with patch("motor.buscar_cotacao_btc_brl", side_effect=fetch_quote):
+        with (
+            patch.dict("config.CONFIG", {"intervalo_cotacao_segundos": 5}),
+            patch("motor.buscar_cotacao_btc_brl", side_effect=fetch_quote),
+        ):
             motor._loop_cotacao()
 
         self.assertEqual(fetch_count, 2)
         self.assertIs(motor._cotacao_atual, quote)
         self.assertTrue(motor.preco_atualizado)
         self.assertEqual(motor.ultimo_erro, "")
+        self.assertTrue(motor._cotacao_pronta.is_set())
+        self.assertGreaterEqual(
+            motor._parar_cotacao.wait.call_args.args[0],
+            4.9,
+        )
 
     def test_local_time_and_brazilian_currency_format(self):
         local = AppBTC._para_horario_local("2026-10-13T08:00:00+00:00")

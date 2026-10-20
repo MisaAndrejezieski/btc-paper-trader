@@ -24,11 +24,12 @@ in-memory models.
 
 ## Market and trade flow
 
-1. The motor requests a quote from CoinGecko, then Binance. If both online
-   sources fail, a cached quote can be displayed but is marked stale and cannot
-   trigger operations.
-2. For a current quote, `strategy.decidir_acao` evaluates stop-loss first,
-   followed by take-profit and extra-buy conditions.
+1. A dedicated motor thread requests a quote from CoinGecko, then Binance,
+   every five seconds. If both online sources fail, a cached quote can be
+   displayed but is marked stale and cannot trigger operations.
+2. The strategy runs independently every five minutes and evaluates the latest
+   available online quote, checking stop-loss first, then take-profit and
+   extra-buy conditions.
 3. `simulator.py` applies a selected action to `Estado`, including the configured
    fee, updates balances/counters and returns a `Trade`. Manual deposits and
    withdrawals instead create `CashFlow` events and do not create trades.

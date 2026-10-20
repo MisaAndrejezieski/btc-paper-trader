@@ -1002,6 +1002,7 @@ class MotorSimulador:
     def _loop_cotacao(self):
         """Atualiza a cotação online sem antecipar o ciclo da estratégia."""
         while self.rodando:
+            inicio_ciclo = time.monotonic()
             try:
                 cotacao = buscar_cotacao_btc_brl()
                 with self.lock:
@@ -1020,8 +1021,9 @@ class MotorSimulador:
                     self.ultimo_erro = str(exc)
                 self._cotacao_pronta.set()
 
-            intervalo = CONFIG.get("intervalo_cotacao_segundos", 5)
-            self._parar_cotacao.wait(intervalo)
+            intervalo = float(CONFIG.get("intervalo_cotacao_segundos", 5))
+            espera = max(0.0, intervalo - (time.monotonic() - inicio_ciclo))
+            self._parar_cotacao.wait(espera)
 
     def _loop(self):
         """Executa o ciclo contínuo de cotação, estratégia e persistência.
@@ -1118,14 +1120,20 @@ class MotorSimulador:
 
                 with self.lock:
                     cotacao_operacao = self._cotacao_atual
+                    pode_operar = (
+                        cotacao_operacao is not None
+                        and cotacao_operacao.atual
+                        and not self.erro_persistencia
+                    )
                     acao = (
                         decidir_acao(self.estado, cotacao_operacao.preco_brl)
-                        if (
-                            cotacao_operacao is not None
-                            and cotacao_operacao.atual
-                            and not self.erro_persistencia
-                        )
+                        if pode_operar and cotacao_operacao is not None
                         else {"acao": "NADA"}
+                    )
+                    preco_operacao = (
+                        cotacao_operacao.preco_brl
+                        if cotacao_operacao is not None
+                        else cotacao.preco_brl
                     )
                     trade_executado = None
                     estado_anterior = (
@@ -1138,7 +1146,7 @@ class MotorSimulador:
                     if acao["acao"] == "COMPRA":
                         trade_executado = executar_compra(
                             self.estado,
-                            cotacao_operacao.preco_brl,
+                            preco_operacao,
                             acao["valor_brl"],
                             acao["motivo"],
                         )
@@ -1146,7 +1154,7 @@ class MotorSimulador:
                     elif acao["acao"] == "VENDA":
                         trade_executado = executar_venda(
                             self.estado,
-                            cotacao_operacao.preco_brl,
+                            preco_operacao,
                             acao["percentual"],
                             acao["motivo"],
                         )
@@ -1162,17 +1170,13 @@ class MotorSimulador:
                     self.artigos_analistas = artigos_analistas
                     self.atualizado_analistas = atualizado_analistas
                     self.erro_analise = erro_analise
-                    if not self.erro_persistencia:
+                    if not self.erro_persistencia and cotacao_operacao is not None:
                         if trade_executado is None:
                             self._salvar_estado()
                             self._salvar_historico()
                         self._registrar_amostra_equity(
-                            cotacao_operacao.preco_brl
-                            if cotacao_operacao is not None
-                            else cotacao.preco_brl,
-                            cotacao_operacao.timestamp
-                            if cotacao_operacao is not None
-                            else cotacao.timestamp,
+                            cotacao_operacao.preco_brl,
+                            cotacao_operacao.timestamp,
                             force_sample=trade_executado is not None,
                         )
 
@@ -1180,7 +1184,6 @@ class MotorSimulador:
                 print(f"[ERRO no motor] {e}")
                 with self.lock:
                     self.ultimo_erro = str(e)
-                    self.preco_atualizado = False
 
             for _ in range(int(CONFIG["intervalo_loop_minutos"] * 60)):
                 if not self.rodando:
