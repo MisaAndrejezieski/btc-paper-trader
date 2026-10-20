@@ -98,12 +98,18 @@ class SimulatorTests(unittest.TestCase):
         motor.thread = Mock()
         motor.thread.is_alive.return_value = False
         motor.thread.start.side_effect = OSError("thread indisponível")
+        motor.thread_cotacao = Mock()
+        motor.thread_cotacao.is_alive.return_value = False
+        motor._parar_cotacao = Mock()
+        motor.rodando = True
 
         with self.assertRaisesRegex(RuntimeError, "thread indisponível"):
             motor.iniciar()
 
         self.assertIn("thread indisponível", motor.erro_persistencia)
+        motor.thread_cotacao.start.assert_called_once_with()
         motor.thread.start.assert_called_once_with()
+        motor._parar_cotacao.set.assert_called_once_with()
 
     def test_concurrent_manual_buys_do_not_corrupt_state(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -509,6 +515,7 @@ class SimulatorTests(unittest.TestCase):
         motor.erro_analise = ""
         motor.rodando = True
         motor.lock = threading.Lock()
+        motor._cotacao_pronta = threading.Event()
 
         with tempfile.TemporaryDirectory() as directory:
             files = {
@@ -523,9 +530,10 @@ class SimulatorTests(unittest.TestCase):
                 datetime.now(timezone.utc),
                 True,
             )
+            motor._cotacao_atual = quote
+            motor._cotacao_pronta.set()
             with (
                 patch.dict("config.CONFIG", {**files, "intervalo_loop_minutos": 1}),
-                patch("motor.buscar_cotacao_btc_brl", return_value=quote),
                 patch("motor.buscar_historico_btc_brl", return_value=[]),
                 patch(
                     "motor.time.sleep",
@@ -598,79 +606,61 @@ class SimulatorTests(unittest.TestCase):
         motor.lock = threading.Lock()
         motor.ultimo_erro = ""
         motor.preco_atualizado = True
+        motor._cotacao_atual = Cotacao(
+            200_000,
+            "Teste",
+            datetime.now(timezone.utc),
+            True,
+        )
+        motor._cotacao_pronta = threading.Event()
+        motor._parar_cotacao = Mock()
+        motor._parar_cotacao.wait.side_effect = lambda _: setattr(
+            motor, "rodando", False
+        )
 
         with (
             patch("motor.buscar_cotacao_btc_brl", side_effect=RuntimeError("offline")),
-            patch(
-                "motor.time.sleep",
-                side_effect=lambda _: setattr(motor, "rodando", False),
-            ),
         ):
-            motor._loop()
+            motor._loop_cotacao()
 
         self.assertFalse(motor.preco_atualizado)
         self.assertEqual(motor.ultimo_erro, "offline")
+        self.assertIsNone(motor._cotacao_atual)
 
     def test_loop_recovers_quote_after_a_transient_failure(self):
         motor = MotorSimulador.__new__(MotorSimulador)
-        motor.estado = Estado()
-        motor.historico = []
-        motor.fluxo_caixa = []
-        motor.equity_history = []
-        motor._pending_equity_flow = 0.0
-        motor.erro_patrimonio = ""
-        motor.erro_persistencia = ""
-        motor.preco_atual = None
-        motor.fonte_preco = ""
-        motor.preco_atualizado = False
-        motor.ultimo_update = None
-        motor.ultimo_erro = ""
-        motor.historico_cotacao = []
-        motor.previsao_dia = []
-        motor.sentimento_analistas = 0.0
-        motor.artigos_analistas = []
-        motor.atualizado_mercado = None
-        motor.atualizado_analistas = datetime.now(timezone.utc)
-        motor.erro_analise = ""
         motor.rodando = True
         motor.lock = threading.Lock()
+        motor.ultimo_erro = ""
+        motor.preco_atualizado = False
+        motor._cotacao_atual = None
+        motor._cotacao_pronta = threading.Event()
+        motor._parar_cotacao = Mock()
         quote = Cotacao(
             200_000,
             "Teste",
             datetime.now(timezone.utc),
             True,
         )
-        sleeps = 0
+        fetch_count = 0
 
         def stop_after_second_iteration(_):
-            nonlocal sleeps
-            sleeps += 1
-            if sleeps == 2:
+            if fetch_count == 2:
                 motor.rodando = False
 
-        with tempfile.TemporaryDirectory() as directory:
-            files = {
-                "state_file": os.path.join(directory, "state.json"),
-                "history_file": os.path.join(directory, "history.json"),
-                "trade_journal_file": os.path.join(directory, "trade.json"),
-                "cash_flow_file": os.path.join(directory, "cash_flow.json"),
-                "equity_file": os.path.join(directory, "equity.json"),
-            }
-            with (
-                patch.dict(
-                    "config.CONFIG",
-                    {**files, "intervalo_loop_minutos": 1 / 60},
-                ),
-                patch(
-                    "motor.buscar_cotacao_btc_brl",
-                    side_effect=[RuntimeError("offline"), quote],
-                ) as fetch_quote,
-                patch("motor.buscar_historico_btc_brl", return_value=[]),
-                patch("motor.time.sleep", side_effect=stop_after_second_iteration),
-            ):
-                motor._loop()
+        def fetch_quote():
+            nonlocal fetch_count
+            fetch_count += 1
+            if fetch_count == 1:
+                raise RuntimeError("offline")
+            return quote
 
-        self.assertEqual(fetch_quote.call_count, 2)
+        motor._parar_cotacao.wait.side_effect = stop_after_second_iteration
+        with patch("motor.buscar_cotacao_btc_brl", side_effect=fetch_quote):
+            motor._loop_cotacao()
+
+        self.assertEqual(fetch_count, 2)
+        self.assertIs(motor._cotacao_atual, quote)
         self.assertTrue(motor.preco_atualizado)
         self.assertEqual(motor.ultimo_erro, "")
 

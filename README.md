@@ -88,8 +88,9 @@ movimentações manuais de saldo, separadas do histórico de trades.
   autoria, horário e classificação lexical; a classificação não é consenso de
   mercado nem previsão oficial. Se não houver matérias
   elegíveis, a projeção usa apenas os dados de mercado.
-- **Atualização dos gráficos:** acompanha o ciclo de cotação (5 minutos);
-  matérias são consultadas a cada 15 minutos.
+- **Atualização:** a cotação online é consultada a cada 5 segundos. A estratégia
+  automática e as análises de mercado continuam no ciclo de 5 minutos; matérias
+  são consultadas a cada 15 minutos.
 - **Limites da projeção:** estimativa experimental, com incerteza explícita;
   não constitui recomendação ou aconselhamento financeiro.
 

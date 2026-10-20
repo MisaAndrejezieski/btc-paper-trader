@@ -77,6 +77,9 @@ class MotorSimulador:
         self.preco_atualizado = False
         self.ultimo_update = None
         self.ultimo_erro = ""
+        self._cotacao_atual: Cotacao | None = None
+        self._cotacao_pronta = threading.Event()
+        self._parar_cotacao = threading.Event()
         self.historico_cotacao = []
         self.previsao_dia = []
         self.sentimento_analistas = 0.0
@@ -87,6 +90,9 @@ class MotorSimulador:
         self.rodando = True
         self.lock = threading.Lock()
         self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread_cotacao = threading.Thread(
+            target=self._loop_cotacao, daemon=True
+        )
 
     @staticmethod
     def _migrar_arquivos_legados():
@@ -954,12 +960,19 @@ class MotorSimulador:
                 ``erro_persistencia``.
 
         Side Effects:
-            Inicia ``self.thread``.
+            Inicia as threads de cotação e de estratégia.
         """
         if not self.thread.is_alive():
             try:
+                self.rodando = True
+                self._parar_cotacao.clear()
+                self.thread_cotacao.start()
                 self.thread.start()
             except Exception as exc:
+                self.rodando = False
+                self._parar_cotacao.set()
+                if self.thread_cotacao.is_alive():
+                    self.thread_cotacao.join(timeout=2)
                 self.erro_persistencia = f"Não foi possível iniciar o motor: {exc}"
                 raise RuntimeError(self.erro_persistencia) from exc
 
@@ -980,8 +993,35 @@ class MotorSimulador:
             até dois segundos.
         """
         self.rodando = False
+        self._parar_cotacao.set()
         if self.thread.is_alive():
             self.thread.join(timeout=2)
+        if self.thread_cotacao.is_alive():
+            self.thread_cotacao.join(timeout=2)
+
+    def _loop_cotacao(self):
+        """Atualiza a cotação online sem antecipar o ciclo da estratégia."""
+        while self.rodando:
+            try:
+                cotacao = buscar_cotacao_btc_brl()
+                with self.lock:
+                    self._cotacao_atual = cotacao if cotacao.atual else None
+                    self.preco_atual = cotacao.preco_brl
+                    self.fonte_preco = cotacao.fonte
+                    self.preco_atualizado = cotacao.atual
+                    self.ultimo_update = cotacao.timestamp
+                    self.ultimo_erro = ""
+                self._cotacao_pronta.set()
+            except Exception as exc:
+                print(f"[ERRO na cotação] {exc}")
+                with self.lock:
+                    self._cotacao_atual = None
+                    self.preco_atualizado = False
+                    self.ultimo_erro = str(exc)
+                self._cotacao_pronta.set()
+
+            intervalo = CONFIG.get("intervalo_cotacao_segundos", 5)
+            self._parar_cotacao.wait(intervalo)
 
     def _loop(self):
         """Executa o ciclo contínuo de cotação, estratégia e persistência.
@@ -997,13 +1037,22 @@ class MotorSimulador:
             ``ultimo_erro`` e invalidam a cotação, sem encerrar o loop.
 
         Side Effects:
-            Consulta fontes online, atualiza estado de mercado, executa trades
-            automáticos, grava estado/históricos e aguarda o intervalo definido
-            em ``CONFIG`` enquanto ``rodando`` for verdadeiro.
+            Atualiza estado de mercado, executa trades automáticos, grava
+            estado/históricos e aguarda o intervalo de estratégia em ``CONFIG``.
         """
         while self.rodando:
+            if not self._cotacao_pronta.wait(timeout=1):
+                continue
+            if not self.rodando:
+                break
             try:
-                cotacao: Cotacao = buscar_cotacao_btc_brl()
+                with self.lock:
+                    cotacao = self._cotacao_atual
+                    erro_cotacao = self.ultimo_erro
+                if cotacao is None:
+                    raise RuntimeError(
+                        erro_cotacao or "Cotação online indisponível."
+                    )
 
                 with self.lock:
                     historico_cotacao = self.historico_cotacao
@@ -1068,9 +1117,14 @@ class MotorSimulador:
                     break
 
                 with self.lock:
+                    cotacao_operacao = self._cotacao_atual
                     acao = (
-                        decidir_acao(self.estado, cotacao.preco_brl)
-                        if cotacao.atual and not self.erro_persistencia
+                        decidir_acao(self.estado, cotacao_operacao.preco_brl)
+                        if (
+                            cotacao_operacao is not None
+                            and cotacao_operacao.atual
+                            and not self.erro_persistencia
+                        )
                         else {"acao": "NADA"}
                     )
                     trade_executado = None
@@ -1084,7 +1138,7 @@ class MotorSimulador:
                     if acao["acao"] == "COMPRA":
                         trade_executado = executar_compra(
                             self.estado,
-                            cotacao.preco_brl,
+                            cotacao_operacao.preco_brl,
                             acao["valor_brl"],
                             acao["motivo"],
                         )
@@ -1092,7 +1146,7 @@ class MotorSimulador:
                     elif acao["acao"] == "VENDA":
                         trade_executado = executar_venda(
                             self.estado,
-                            cotacao.preco_brl,
+                            cotacao_operacao.preco_brl,
                             acao["percentual"],
                             acao["motivo"],
                         )
@@ -1101,11 +1155,6 @@ class MotorSimulador:
                     if trade_executado is not None and estado_anterior is not None:
                         self._persistir_trade(estado_anterior, historico_anterior)
 
-                    self.preco_atual = cotacao.preco_brl
-                    self.fonte_preco = cotacao.fonte
-                    self.preco_atualizado = cotacao.atual
-                    self.ultimo_update = cotacao.timestamp
-                    self.ultimo_erro = ""
                     self.historico_cotacao = historico_cotacao
                     self.previsao_dia = previsao_dia
                     self.atualizado_mercado = atualizado_mercado
@@ -1118,8 +1167,12 @@ class MotorSimulador:
                             self._salvar_estado()
                             self._salvar_historico()
                         self._registrar_amostra_equity(
-                            cotacao.preco_brl,
-                            cotacao.timestamp,
+                            cotacao_operacao.preco_brl
+                            if cotacao_operacao is not None
+                            else cotacao.preco_brl,
+                            cotacao_operacao.timestamp
+                            if cotacao_operacao is not None
+                            else cotacao.timestamp,
                             force_sample=trade_executado is not None,
                         )
 

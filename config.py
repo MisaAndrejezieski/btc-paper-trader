@@ -24,6 +24,7 @@ CONFIG = {
     "stop_loss_ativo": True,
     # --- Loop ---
     "intervalo_loop_minutos": 5,
+    "intervalo_cotacao_segundos": 5,
     "max_iteracoes": 0,
     # --- Custos ---
     "taxa_operacao_pct": 0.1,
