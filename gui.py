@@ -1,4 +1,4 @@
-"""Interface gr?fica CustomTkinter do BTC Paper Trader."""
+"""Interface gráfica CustomTkinter do BTC Paper Trader."""
 
 import queue
 import re
