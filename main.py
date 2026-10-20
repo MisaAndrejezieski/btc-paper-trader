@@ -1,4 +1,4 @@
-"""Ponto de entrada da interface gr?fica BTC Paper Trader."""
+"""Ponto de entrada da interface gráfica BTC Paper Trader."""
 
 __all__ = ["AppBTC", "FUSO_LOCAL", "MotorSimulador", "formatar_reais"]
 
