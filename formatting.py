@@ -1,4 +1,4 @@
-"""Fun??es de formata??o compartilhadas pela interface e pelo ponto de entrada."""
+"""Funções de formatação compartilhadas pela interface e pelo ponto de entrada."""
 
 
 def formatar_reais(valor: float, sinal: bool = False) -> str:
