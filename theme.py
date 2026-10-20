@@ -1,6 +1,5 @@
 """
-Paleta cyberpunk — verde matrix + pastel em fundo escuro.
-Centraliza todas as cores para facilitar ajustes.
+Paleta cyberpunk
 """
 
 CORES = {
