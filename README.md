@@ -96,10 +96,24 @@ movimentações manuais de saldo, separadas do histórico de trades.
 
 ## Setup
 
+Crie um ambiente virtual no sistema operacional em que o aplicativo será
+executado. Ambientes virtuais não são portáveis entre Windows e Linux; ao
+alternar de sistema, recrie o ambiente.
+
+### Windows (PowerShell)
+
 ```bash
-python -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+```
+
+### Linux
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
 Execute a interface com `python main.py`. Registre um depósito fictício para
