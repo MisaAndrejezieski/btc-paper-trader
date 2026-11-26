@@ -27,6 +27,8 @@ movimentações manuais de saldo, separadas do histórico de trades.
   em estados antigos. Só executa se houver saldo suficiente em reais.
 - **Primeira compra:** feita manualmente por você. Depois, compras extras e
   vendas automáticas usam apenas o saldo e os BTC já existentes no simulador.
+- **Custo médio:** incorpora o valor bruto da compra e a taxa paga ao calcular
+  o preço médio por BTC, mantendo take-profit e stop-loss baseados em custo real.
 - **Take-profit:** vende 50% uma vez se o preço subir 3% sobre o preço médio;
   pode voltar a disparar depois de uma nova compra.
 - **Stop-loss:** vende 50% uma vez se o preço cair 10% sobre o preço médio;

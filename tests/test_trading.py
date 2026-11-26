@@ -397,14 +397,14 @@ class SimulatorTests(unittest.TestCase):
 
     def test_take_profit_only_sells_once_until_next_buy(self):
         executar_compra(self.estado, 200_000, 500, "manual")
-        acao = decidir_acao(self.estado, 206_000)
+        acao = decidir_acao(self.estado, 207_000)
         self.assertEqual(acao["motivo"], "take_profit")
         self.assertEqual(acao["percentual"], 50)
-        executar_venda(self.estado, 206_000, acao["percentual"], acao["motivo"])
+        executar_venda(self.estado, 207_000, acao["percentual"], acao["motivo"])
 
-        self.assertEqual(decidir_acao(self.estado, 206_000), {"acao": "NADA"})
+        self.assertEqual(decidir_acao(self.estado, 207_000), {"acao": "NADA"})
 
-        executar_compra(self.estado, 206_000, 100, "manual")
+        executar_compra(self.estado, 207_000, 100, "manual")
         self.assertFalse(self.estado.take_profit_executado)
 
     def test_stop_loss_only_sells_once_and_does_not_rebuy_while_falling(self):

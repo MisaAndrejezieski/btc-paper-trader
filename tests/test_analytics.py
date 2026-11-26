@@ -47,8 +47,8 @@ class AnalyticsTests(unittest.TestCase):
     def test_fifo_realized_pnl_includes_transaction_fees(self):
         pnl = calcular_pnl_realizado(self.trades)
         self.assertIsNone(pnl[0])
-        self.assertAlmostEqual(pnl[1], 9.88)
-        self.assertAlmostEqual(pnl[2], -10.10)
+        self.assertAlmostEqual(pnl[1], 9.89)
+        self.assertAlmostEqual(pnl[2], -10.09)
 
     def test_risk_metrics_cover_drawdown_win_rate_profit_factor_and_holding(self):
         history = [
@@ -77,15 +77,15 @@ class AnalyticsTests(unittest.TestCase):
         metrics = calcular_metricas_risco(self.trades, history)
         self.assertAlmostEqual(metrics["max_drawdown_pct"], 25.0)
         self.assertEqual(metrics["win_rate_pct"], 50.0)
-        self.assertAlmostEqual(metrics["profit_factor"], 9.94 / 10.04)
+        self.assertAlmostEqual(metrics["profit_factor"], 9.89 / 10.09)
         self.assertEqual(metrics["average_holding_hours"], 36.0)
         self.assertEqual(metrics["average_exposure_pct"], 100.0)
 
     def test_csv_exports_sell_pnl_and_excel_delimiter(self):
         csv_text = gerar_csv_trades(self.trades)
         self.assertIn("tipo;motivo", csv_text)
-        self.assertIn("9.88", csv_text)
-        self.assertIn("-10.1", csv_text)
+        self.assertIn("9.89", csv_text)
+        self.assertIn("-10.09", csv_text)
 
     def test_backtest_returns_strategy_and_buy_and_hold_series(self):
         history = [
