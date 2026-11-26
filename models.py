@@ -4,6 +4,7 @@ Dataclasses representam o estado e os eventos.
 """
 
 from dataclasses import asdict, dataclass, fields
+from math import isfinite
 
 
 @dataclass
@@ -139,4 +140,40 @@ class Estado:
         for key, value in d.items():
             if key in payload:
                 payload[key] = value
+
+        float_fields = (
+            "capital_brl",
+            "capital_btc",
+            "preco_medio_brl",
+            "ultimo_preco_compra_brl",
+            "patrimonio_inicial_brl",
+            "total_taxas_brl",
+        )
+        int_fields = ("total_compras", "total_vendas")
+        bool_fields = ("take_profit_executado", "stop_loss_executado")
+        string_fields = ("ultima_compra_ts", "ultimo_aporte_ts")
+
+        for name in float_fields:
+            value = payload[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} precisa ser um número.")
+            value = float(value)
+            if not isfinite(value) or value < 0:
+                raise ValueError(f"{name} precisa ser um número finito não negativo.")
+            payload[name] = value
+
+        for name in int_fields:
+            value = payload[name]
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} precisa ser um inteiro não negativo.")
+
+        for name in bool_fields:
+            value = payload[name]
+            if not isinstance(value, bool):
+                raise ValueError(f"{name} precisa ser verdadeiro ou falso.")
+
+        for name in string_fields:
+            if not isinstance(payload[name], str):
+                raise ValueError(f"{name} precisa ser uma string.")
+
         return cls(**payload)

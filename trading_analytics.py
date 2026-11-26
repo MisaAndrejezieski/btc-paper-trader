@@ -69,7 +69,11 @@ def calcular_pnl_realizado(trades: list[dict]) -> list[float | None]:
         if tipo == "COMPRA":
             if quantity > 0 and gross >= 0:
                 lots.append(
-                    [quantity, gross / quantity, _timestamp(trade.get("timestamp"))]
+                    [
+                        quantity,
+                        (gross + fee) / quantity,
+                        _timestamp(trade.get("timestamp")),
+                    ]
                 )
             realized.append(None)
             continue

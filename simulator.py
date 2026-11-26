@@ -106,9 +106,9 @@ def executar_compra(
     # Atualiza preço médio (média ponderada)
     novo_total_btc = estado.capital_btc + quantidade
     if novo_total_btc > 0:
-        novo_preco_medio = (
-            (estado.preco_medio_brl * estado.capital_btc) + (preco_brl * quantidade)
-        ) / novo_total_btc
+        custo_anterior = estado.preco_medio_brl * estado.capital_btc
+        custo_nova_compra = valor_brl
+        novo_preco_medio = (custo_anterior + custo_nova_compra) / novo_total_btc
     else:
         novo_preco_medio = preco_brl
 

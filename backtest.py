@@ -53,7 +53,6 @@ def simular_backtest(
             total_trades += 1
         elif action["acao"] == "VENDA":
             executar_venda(estado, price, action["percentual"], action["motivo"])
-            estado.ultima_compra_ts = timestamp.isoformat()
             total_trades += 1
         points.append(
             {
