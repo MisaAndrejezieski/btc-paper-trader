@@ -320,6 +320,20 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(estado.capital_brl, 1_000)
         self.assertFalse(hasattr(estado, "unknown_legacy_field"))
 
+    def test_state_from_dict_rejects_invalid_numeric_fields(self):
+        invalid_values = (math.inf, math.nan, -1, True, "100")
+        for value in invalid_values:
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    Estado.from_dict({"capital_brl": value})
+
+    def test_purchase_average_cost_includes_the_purchase_fee(self):
+        estado = Estado(capital_brl=1_000)
+        executar_compra(estado, 200_000, 500, "manual")
+        first_quantity = estado.capital_btc
+        expected = 500 / first_quantity
+        self.assertAlmostEqual(estado.preco_medio_brl, expected)
+
     def test_equity_history_is_capped_at_15000_points(self):
         motor = MotorSimulador.__new__(MotorSimulador)
         motor.estado = Estado(capital_brl=100)
